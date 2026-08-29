@@ -1,0 +1,9 @@
+# Dépendances installées par npm (se régénèrent avec "npm install")
+node_modules/
+
+# Base de données locale (contient les vraies données, ne doit pas être publique)
+*.db
+
+# Fichiers système
+.DS_Store
+Thumbs.db
