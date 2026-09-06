@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music App — Fiche morceau</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="phone">
+    <header class="track-header">
+      <div class="cover-art" aria-hidden="true">♪</div>
+      <div class="track-meta">
+        <h1 id="track-title">—</h1>
+        <p class="artist" id="track-artist">—</p>
+        <p class="album" id="track-album">—</p>
+        <p class="tags" id="track-tags">—</p>
+        <div class="header-actions">
+          <button class="play-btn" type="button">▶ Écouter le morceau</button>
+          <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="notation-card">
+      <div class="notation-title-row">
+        <h2>MA NOTATION <span class="global-inline">- <span id="global-value">—</span>/10</span></h2>
+        <button id="classic-btn" class="classic-toggle" type="button">
+          <span class="classic-word">Classic</span>
+          <span class="classic-star" id="classic-star">☆</span>
+        </button>
+      </div>
+
+      <!-- NOTE AU FEELING -->
+      <div class="notation-block" id="feeling-block">
+        <div class="rating-row">
+          <button class="pill-toggle" id="feeling-toggle" type="button">
+            NOTE AU FEELING <span class="pencil">✎</span>
+          </button>
+          <div class="slider-block">
+            <div class="slider-line">
+              <div class="slider-track-wrap">
+                <input type="range" class="rating-slider" id="feeling-slider" min="0" max="10" step="1" value="0" disabled />
+                <div class="slider-ticks"><span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span></div>
+              </div>
+              <span class="slider-value" id="feeling-value">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="edit-actions" id="feeling-actions" hidden>
+          <div class="btn-row">
+            <button type="button" class="btn btn-grey" data-action="reset">Réinitialiser</button>
+            <button type="button" class="btn btn-pink" data-action="cancel">Abandonner</button>
+            <button type="button" class="btn btn-green" data-action="save">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- NOTE PAR CRITERES -->
+      <div class="notation-block" id="criteria-block">
+        <div class="rating-row">
+          <button class="pill-toggle" id="criteria-toggle" type="button">
+            NOTE PAR CRITERES <span class="pencil">✎</span>
+          </button>
+          <div class="slider-block">
+            <div class="slider-line">
+              <div class="slider-track-wrap">
+                <input type="range" class="rating-slider readonly-slider" id="criteria-slider" min="0" max="10" step="0.1" value="0" disabled />
+                <div class="slider-ticks flush"><span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span></div>
+              </div>
+              <span class="slider-value" id="criteria-value">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="criteria-breakdown">
+          <div class="criteria-line">
+            <span class="criteria-label">Performance</span>
+            <input type="range" class="mini-slider" id="performance-slider" min="0" max="10" step="0.5" value="0" disabled />
+            <span class="criteria-value" id="performance-value">—</span>
+          </div>
+          <div class="criteria-line">
+            <span class="criteria-label">Texte</span>
+            <input type="range" class="mini-slider" id="texte-slider" min="0" max="10" step="0.5" value="0" disabled />
+            <span class="criteria-value" id="texte-value">—</span>
+          </div>
+          <div class="criteria-line">
+            <span class="criteria-label">Production</span>
+            <input type="range" class="mini-slider" id="production-slider" min="0" max="10" step="0.5" value="0" disabled />
+            <span class="criteria-value" id="production-value">—</span>
+          </div>
+        </div>
+        <div class="edit-actions" id="criteria-actions" hidden>
+          <div class="btn-row">
+            <button type="button" class="btn btn-grey" data-action="reset">Réinitialiser</button>
+            <button type="button" class="btn btn-pink" data-action="cancel">Abandonner</button>
+            <button type="button" class="btn btn-green" data-action="save">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

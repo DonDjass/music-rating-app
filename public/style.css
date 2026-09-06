@@ -1,0 +1,538 @@
+:root {
+  --black: #000000;
+  --card-border: rgba(255, 255, 255, 0.25);
+  --divider: rgba(255, 255, 255, 0.15);
+  --white: #f5f5f5;
+  --grey: #9a9a9a;
+  --gold: #f4c430;
+  --gold-pale: #f6e7ab;
+  --blue-fill: #6366d6;
+  --track-dark: #2a2a2e;
+  --mini-fill: #e7e7e7;
+  --mini-track: #3a3a3a;
+  --readonly-fill: #8a8578;
+  --readonly-track: #2c2a26;
+  --btn-grey: #d9d9d9;
+  --btn-pink: #f3a9ad;
+  --btn-green: #57c98d;
+  --heart-pink: #f4a19c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--white);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+.phone {
+  max-width: 430px;
+  margin: 0 auto;
+  padding-bottom: 60px;
+}
+
+/* --- Header --- */
+
+.track-header {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px 20px 0;
+}
+
+.cover-art {
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #3a2f22, #171412);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  color: var(--gold);
+}
+
+.track-meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.track-meta h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--white);
+  line-height: 1.15;
+}
+
+.track-meta .artist {
+  margin: 3px 0 0;
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.track-meta .album {
+  margin: 3px 0 0;
+  color: var(--grey);
+  font-size: 13px;
+}
+
+.track-meta .tags {
+  margin: 4px 0 0;
+  color: var(--grey);
+  font-size: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.play-btn {
+  background: var(--gold);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.like-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: transparent;
+  color: var(--white);
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.like-btn.liked {
+  color: var(--heart-pink);
+}
+
+/* --- Notation card --- */
+
+.notation-card {
+  margin: 4px 20px 24px;
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 18px 18px 20px;
+}
+
+.notation-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.notation-title-row h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  font-weight: 800;
+  color: var(--white);
+}
+
+.global-inline {
+  color: var(--gold);
+  font-weight: 800;
+}
+
+.classic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.classic-word {
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--grey);
+  font-size: 15px;
+}
+
+.classic-star {
+  color: var(--grey);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.classic-toggle.active .classic-word,
+.classic-toggle.active .classic-star {
+  color: var(--gold);
+}
+
+/* --- Blocs (feeling / critères) : contraste actif vs figé --- */
+
+.notation-block {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  transition: filter 0.15s ease, opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.notation-block.editing {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(244, 196, 48, 0.45);
+  filter: none;
+  opacity: 1;
+}
+
+.notation-block.inactive {
+  filter: grayscale(0.85);
+  opacity: 0.55;
+}
+
+/* --- Rating rows --- */
+
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0;
+}
+
+.pill-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--gold);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  padding: 8px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pill-toggle:hover {
+  filter: brightness(1.05);
+}
+
+/* L'état "actif/édition" est porté par .notation-block.editing (encadré doré) ;
+   le bouton lui-même garde sa couleur pleine, il n'a pas de variante pâle. */
+
+.pencil {
+  font-size: 11px;
+}
+
+.slider-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.slider-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Largeur de référence = curseur seul, pour que l'échelle en dessous
+   n'inclue jamais la valeur numérique affichée à droite. */
+.slider-track-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.slider-value {
+  width: 42px;
+  flex-shrink: 0;
+  text-align: right;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--white);
+}
+
+/* Le curseur natif positionne le CENTRE du thumb (16px, donc rayon 8px)
+   entre 8px et (largeur - 8px) — jamais pile sur les bords 0%/100%. On
+   positionne donc chaque repère au pixel près avec la même formule,
+   plutôt que de répartir le texte par justify-content (imprécis, car
+   "0" et "10" n'ont pas la même largeur). */
+.slider-ticks {
+  position: relative;
+  height: 13px;
+  margin-top: 3px;
+  color: var(--grey);
+  font-size: 11px;
+}
+
+.slider-ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.slider-ticks span:nth-child(1) {
+  left: 8px;
+}
+
+.slider-ticks span:nth-child(2) {
+  left: calc(8px + (100% - 16px) * 0.2);
+}
+
+.slider-ticks span:nth-child(3) {
+  left: calc(8px + (100% - 16px) * 0.4);
+}
+
+.slider-ticks span:nth-child(4) {
+  left: calc(8px + (100% - 16px) * 0.6);
+}
+
+.slider-ticks span:nth-child(5) {
+  left: calc(8px + (100% - 16px) * 0.8);
+}
+
+.slider-ticks span:nth-child(6) {
+  left: calc(100% - 8px);
+}
+
+/* Slider "note par critères" : plus de curseur, la barre remplit donc de
+   bord à bord (0%-100%) — l'échelle doit suivre la même référence. */
+.slider-ticks.flush span:nth-child(1) {
+  left: 0;
+}
+
+.slider-ticks.flush span:nth-child(2) {
+  left: 20%;
+}
+
+.slider-ticks.flush span:nth-child(3) {
+  left: 40%;
+}
+
+.slider-ticks.flush span:nth-child(4) {
+  left: 60%;
+}
+
+.slider-ticks.flush span:nth-child(5) {
+  left: 80%;
+}
+
+.slider-ticks.flush span:nth-child(6) {
+  left: 100%;
+}
+
+/* Native range styling, shared base */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--fill, var(--blue-fill)) var(--pct, 0%), var(--track, var(--track-dark)) var(--pct, 0%));
+  cursor: pointer;
+}
+
+input[type="range"]:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--fill, var(--blue-fill));
+  margin-top: 0;
+}
+
+input[type="range"]::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--fill, var(--blue-fill));
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.rating-slider {
+  --fill: var(--blue-fill);
+  --track: var(--track-dark);
+}
+
+/* Non interactif par nature (BR-00037) : jamais de curseur rond, juste une
+   barre de progression terne, même en édition — pour ne pas ressembler aux
+   vrais sliders manipulables. */
+.readonly-slider {
+  --fill: var(--readonly-fill);
+  --track: var(--readonly-track);
+  cursor: default;
+}
+
+.readonly-slider::-webkit-slider-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+  background: transparent;
+}
+
+.readonly-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+  background: transparent;
+}
+
+.mini-slider {
+  --fill: var(--mini-fill);
+  --track: var(--mini-track);
+  height: 3px;
+}
+
+.mini-slider::-webkit-slider-thumb {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+}
+
+/* --- Criteria breakdown --- */
+
+.criteria-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.criteria-line {
+  display: grid;
+  grid-template-columns: 84px 1fr 38px;
+  align-items: center;
+  gap: 10px;
+}
+
+.criteria-label {
+  color: var(--gold);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: right;
+}
+
+.criteria-value {
+  color: var(--white);
+  font-weight: 700;
+  font-size: 14px;
+  text-align: right;
+}
+
+/* --- Edit actions --- */
+
+.edit-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.edit-actions[hidden] {
+  display: none;
+}
+
+.btn-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-weight: 800;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: #171412;
+  cursor: pointer;
+}
+
+.btn-grey {
+  background: var(--btn-grey);
+}
+
+.btn-pink {
+  background: var(--btn-pink);
+}
+
+.btn-green {
+  background: var(--btn-green);
+}
+
+.btn:disabled {
+  opacity: 0.35;
+  filter: grayscale(0.4);
+  cursor: not-allowed;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--divider);
+  margin: 6px 0;
+}
+
+/* --- Toast --- */
+
+.toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid var(--gold);
+  color: var(--white);
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+.toast.visible {
+  opacity: 1;
+}
