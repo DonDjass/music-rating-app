@@ -30,6 +30,29 @@ sans confirmation :
   relecture du code. À tester sur le téléphone (déjà configuré pour
   accéder au serveur en local).
 
+## Barre d'onglets "Mes notations / Recherche" en bas d'écran — RÉSOLU (2026-09-07)
+
+**Contexte :** la maquette `Proposition header.png` place la barre
+d'onglets "MES NOTATIONS / RECHERCHE" en haut de l'écran, au-dessus de la
+fiche. L'implémentation la met en `position: fixed; bottom: 0` (barre de
+navigation type mobile), tout en gardant le code couleur de la maquette
+(fond gris, onglet actif doré plein + bordure noire, onglet inactif doré
+pâle, tiers droit gris).
+**Confirmé par l'utilisateur :** on garde la barre **en bas**. La position
+basse est le choix retenu ; la maquette n'est suivie que pour le style des
+onglets, pas pour leur emplacement. Écart assumé, pas une dérive.
+
+## Écran de recherche — conforme à `Mode Recherche.png` — RÉSOLU (2026-09-07)
+
+**Contexte :** l'écran de recherche développé (titre + barre pilule +
+"MORCEAUX / ALBUM / ARTISTE" en libellés dorés répartis, onglet actif
+souligné en doré) reprend la maquette `Mode Recherche.png` avec deux
+différences mineures : police des catégories un peu plus petite que la
+maquette, et présence d'un soulignement d'onglet actif absent de la
+maquette.
+**Confirmé par l'utilisateur :** on garde l'écran tel que développé, ces
+différences mineures sont acceptées.
+
 ## Navigation Précédent/Suivant dans un album (hors spec)
 
 Fonctionnalité ajoutée à la demande de l'utilisateur : deux boutons
