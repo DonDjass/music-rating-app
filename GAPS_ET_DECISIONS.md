@@ -304,12 +304,13 @@ largeur). Structure HTML inchangée (elle collait déjà). Divergences
 conservées : §11bis-2 (pill active dorée pleine, pas de variante pâle).
 Hors périmètre, non repris de 001/002/003 : la carte "NOTATION DE LA
 COMMUNAUTE" (agrégation communautaire, cf. §3 — nécessite GD-00001).
-**Jugement non confirmé** : la barre "note par critères" en lecture seule
-passe d'un ton olive terne (`#8a8578`) à un gris clair (`#d2d2d2`) pour
-coller à `Ajustement mockup.png` ; elle reste sans curseur donc toujours
-lisible comme non manipulable (BR-00037). À valider visuellement.
-**Non vérifié dans un navigateur** — ajustements CSS relus seulement, à
-confirmer sur le téléphone / navigateur.
+La barre "note par critères" en lecture seule passe d'un ton olive terne
+(`#8a8578`) à un gris clair (`#d2d2d2`) pour coller à
+`Ajustement mockup.png` ; elle reste sans curseur donc toujours lisible
+comme non manipulable (BR-00037).
+**CONFIRMÉ (2026-09-07)** : rendu validé par l'utilisateur sur son
+téléphone, on garde en l'état. Autres points d'amélioration à voir plus
+tard.
 
 ### 11bis. Interprétation de deux bugs signalés (contexte perdu)
 **Contexte :** l'utilisateur a signalé "doublon des critères" et "affichage
