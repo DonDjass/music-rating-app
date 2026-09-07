@@ -7,6 +7,151 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Swipe tactile pour Précédent/Suivant (hors spec)
+
+Ajouté à la demande de l'utilisateur, en plus des boutons. Choix faits
+sans confirmation :
+- **Convention de sens** : swipe vers la gauche = suivant, swipe vers la
+  droite = précédent (comme feuilleter des pages/photos). À inverser si
+  ça ne semble pas naturel à l'usage.
+- **Zone tactile étendue à toute la fiche** (élargie suite à un retour :
+  au départ limitée à l'en-tête, car un swipe partant de la zone
+  pochette/infos ne fonctionnait pas — cf. plus bas). Les sliders de
+  notation (`input[type="range"]`) sont explicitement exclus de la
+  détection (`touchstart` ignoré si la cible est un slider, + override
+  CSS `touch-action: none` sur les sliders pour garantir qu'ils gardent
+  leur geste horizontal natif complet malgré la restriction `pan-y`
+  posée sur le reste de la fiche).
+- **Seuil de déclenchement** : 60px de déplacement horizontal minimum, et
+  le mouvement doit être nettement plus horizontal que vertical (pour ne
+  pas confondre avec un scroll de la page).
+- **Non testé sur un vrai écran tactile** : je n'ai pas de navigateur dans
+  cette session, donc cette fonctionnalité n'a pu être vérifiée que par
+  relecture du code. À tester sur le téléphone (déjà configuré pour
+  accéder au serveur en local).
+
+## Navigation Précédent/Suivant dans un album (hors spec)
+
+Fonctionnalité ajoutée à la demande de l'utilisateur : deux boutons
+"‹ Précédent" / "Suivant ›" sur la fiche de notation pour passer au
+morceau adjacent, quand on est arrivé sur ce morceau via la tracklist
+d'un album.
+
+**Choix faits sans confirmation explicite :**
+- **Portée limitée au contexte album** : la navigation n'existe que si le
+  morceau vient du drill-down d'un album (liste ordonnée disponible). Un
+  morceau ouvert depuis un résultat de recherche direct, depuis les
+  morceaux d'un artiste, ou depuis "Mes notations" n'a pas de
+  Précédent/Suivant (pas d'ordre naturel dans ces cas). Le bandeau est
+  simplement masqué dans ces cas.
+- **Boutons cliquables, pas de raccourci clavier** : "les flèches" a été
+  interprété comme des boutons (‹ ›), pas comme les touches flèches du
+  clavier. À ajouter si l'intention était un raccourci clavier.
+- **RÉSOLU (2026-09-07)** : à la demande de l'utilisateur, le contexte est
+  maintenant reconstruit depuis "Mes notations" aussi. Nouvelle colonne
+  `release_mbid` (identifiant MusicBrainz de l'album, pas juste son nom)
+  enregistrée quand un morceau est noté depuis une tracklist d'album.
+  Depuis "Mes notations", si `release_mbid` est connu, un appel
+  `/api/album-tracks` best-effort retrouve la tracklist et la position du
+  morceau ; en cas d'échec (album introuvable, MusicBrainz indisponible),
+  la fiche s'affiche quand même, simplement sans Précédent/Suivant. Ne
+  fonctionne que pour les morceaux notés APRÈS ce correctif (le
+  `release_mbid` n'est pas rétroactif sur les lignes déjà en base).
+
+---
+
+## Recherche de morceau (hors GD-00002 — fonctionnalité non spécifiée)
+
+Fonctionnalité ajoutée à la demande de l'utilisateur : un écran de
+recherche en amont de la fiche de notation, permettant de choisir
+n'importe quel morceau via l'API MusicBrainz. Aucune section du
+PRODUCT_SPEC.md ne couvre la recherche/sélection d'un morceau (GD-00002
+suppose qu'on est déjà sur la fiche) : tous les points ci-dessous sont
+donc des choix d'implémentation par défaut, pas des interprétations d'une
+règle existante.
+
+### R0. Recherche catégorisée (Albums / Morceaux / Artistes) + drill-down
+**Contexte :** amélioration demandée après R1 (voir ci-dessous) : plutôt
+qu'un seul type de résultat, la recherche interroge maintenant 3
+endpoints MusicBrainz (`release`, `recording`, `artist`) et affiche 3
+catégories. Cliquer un Album ouvre sa tracklist (`release?inc=recordings+artists`),
+cliquer un Artiste ouvre ses morceaux (`recording?artist=<mbid>`, limité
+à 25) — choix confirmé explicitement par l'utilisateur plutôt que de
+relancer une recherche affinée ou de ne pas les rendre cliquables.
+**Limitation connue :** MusicBrainz demande de rester autour d'1
+requête/seconde ; une recherche catégorisée fait 3 appels, faits en
+séquence (pas en parallèle) avec un court délai entre eux. En conditions
+de test (nombreux appels rapprochés pendant le développement), on a
+observé des 503 en chaîne faisant grimper une recherche à 20-47 secondes
+avec le backoff initial (jusqu'à 4 tentatives, 1,5s/3s/4,5s). Le backoff a
+été resserré (3 tentatives max, 800ms/1600ms) pour qu'un vrai
+indisponibilité MusicBrainz remonte une erreur en ~8s max plutôt que de
+faire attendre l'utilisateur une minute — mais rien ne garantit un temps
+de réponse constant tant qu'on utilise l'API publique anonyme (pas de clé
+dédiée).
+
+### R1. Un seul champ de recherche, pas trois — SUPERSEDÉ PAR R0
+**Contexte :** la demande couvrait "chercher un album ou un morceau ou un
+artiste". Cette décision (un seul champ, un seul type de résultat) a
+depuis été remplacée par la recherche catégorisée décrite en R0
+(3 endpoints MusicBrainz, 3 catégories de résultats, drill-down). Gardé
+ici pour l'historique.
+**Choix :** un seul champ, branché sur la recherche "recording" de
+MusicBrainz (qui indexe aussi le nom de l'artiste et le titre de
+l'album associé) plutôt que trois modes de recherche séparés avec
+navigation en cascade (artiste → ses morceaux, album → ses morceaux).
+**Justification :** l'objectif final est toujours de choisir un morceau ;
+un champ unique couvre les trois cas d'usage sans construire une
+navigation à plusieurs niveaux. À revoir si la recherche par artiste/album
+doit vraiment lister d'abord tous ses morceaux plutôt que remonter
+directement des résultats de type "morceau".
+
+### R2. Modèle de données : bascule vers un identifiant `mbid` générique
+**Contexte :** le morceau était auparavant unique et codé en dur,
+retrouvé par correspondance texte album+artist.
+**Choix :** toutes les routes API sont désormais `/api/tracks/:mbid/...`,
+et une ligne `ratings` est retrouvée/créée par son `mbid` MusicBrainz.
+Nouvelles colonnes `track_title`, `duration_ms`, `release_date` (le
+`title` renvoyé à l'écran retombe sur `album` si `track_title` est vide,
+pour ne pas casser les anciennes lignes).
+**Justification :** nécessaire pour supporter un nombre arbitraire de
+morceaux. **Conséquence :** les deux lignes de démo créées précédemment
+(id 1 : test Daft Punk, id 2 : "N.Y. State of Mind" codé en dur, toutes
+deux sans `mbid`) deviennent orphelines/inaccessibles depuis l'appli — ce
+sont juste des restes inertes en base, sans impact fonctionnel.
+
+### R3. Pas de genre affiché pour les morceaux recherchés
+**Contexte :** l'ancien en-tête affichait "année • durée • genre" pour le
+morceau codé en dur (genre en dur : "Rap, East Coast").
+**Choix :** pour un morceau issu de la recherche, la ligne n'affiche que
+"date • durée" — le genre n'est pas fourni de façon fiable par la
+recherche "recording" de MusicBrainz sans requête supplémentaire.
+**Justification :** éviter un appel réseau MusicBrainz de plus par
+sélection (déjà 1 requête pour rechercher, aucune pour sélectionner —
+les métadonnées viennent du résultat de recherche déjà en main).
+
+### R4. Pas de pochette réelle pour les morceaux recherchés
+**Contexte :** récupérer une vraie pochette nécessiterait une requête
+Cover Art Archive supplémentaire par sélection (sur l'identifiant de
+l'ALBUM, pas du morceau).
+**Choix :** le placeholder dégradé + note de musique reste utilisé pour
+tous les morceaux, y compris ceux choisis par recherche.
+**Justification :** cohérent avec R3 (éviter les appels réseau
+supplémentaires par sélection) ; à ajouter plus tard si la pochette
+devient importante.
+
+### R5. Métadonnées figées au moment de la sélection
+**Contexte :** titre/artiste/album/date/durée sont transmis par le
+front (déjà récupérés lors de la recherche) et stockés une seule fois à
+la création de la ligne.
+**Choix :** si ces informations changent un jour sur MusicBrainz, la
+fiche déjà créée ne se met pas à jour automatiquement.
+**Justification :** évite un appel MusicBrainz à chaque chargement de
+fiche ; acceptable pour une appli de notation personnelle où la valeur
+qui compte est la note, pas la fraîcheur des métadonnées.
+
+---
+
 ## GD-00002 — Écran de notation d'un morceau
 
 ### 0. Bouton "J'aime" (cœur) — fonctionnalité hors périmètre du spec

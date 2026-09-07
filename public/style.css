@@ -33,7 +33,249 @@ body {
 .phone {
   max-width: 430px;
   margin: 0 auto;
-  padding-bottom: 60px;
+  padding-bottom: 80px;
+}
+
+/* --- Recherche --- */
+
+#search-view,
+#my-ratings-view,
+#drilldown-view {
+  padding: 20px 20px 28px;
+}
+
+.category-tabs {
+  display: flex;
+  justify-content: space-between;
+  margin: 22px 4px 6px;
+}
+
+.category-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 6px 4px 8px;
+  opacity: 0.5;
+}
+
+.category-tab:hover {
+  opacity: 0.8;
+}
+
+.category-tab.active {
+  opacity: 1;
+  border-bottom-color: var(--gold);
+}
+
+.search-empty {
+  list-style: none;
+  color: var(--grey);
+  font-size: 13px;
+  padding: 6px 2px;
+}
+
+.drilldown-back {
+  display: inline-block;
+  background: none;
+  border: none;
+  color: var(--grey);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 0 14px;
+}
+
+.drilldown-back:hover {
+  color: var(--gold);
+}
+
+.search-title {
+  margin: 0 0 18px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--white);
+}
+
+.search-bar {
+  display: flex;
+  gap: 8px;
+}
+
+#search-input {
+  flex: 1;
+  min-width: 0;
+  background: #171412;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: var(--white);
+  font-size: 14px;
+}
+
+#search-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.search-btn {
+  flex-shrink: 0;
+  background: var(--gold);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.search-status {
+  margin: 16px 4px 0;
+  color: var(--grey);
+  font-size: 14px;
+}
+
+.search-results {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.search-result:hover {
+  border-color: var(--gold);
+  background: rgba(244, 196, 48, 0.08);
+}
+
+.search-result-info {
+  min-width: 0;
+}
+
+.search-result-title {
+  color: var(--white);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.search-result-meta {
+  color: var(--grey);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.search-result-rating {
+  flex-shrink: 0;
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* --- Barre d'onglets (permanente, présente sur tous les écrans) --- */
+
+.top-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  z-index: 10;
+  display: flex;
+  align-items: stretch;
+  background: #8c8c8c;
+  padding: 10px;
+  gap: 0;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.top-tab {
+  flex: 1;
+  background: var(--gold-pale);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 12px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-right: 2px;
+}
+
+.top-tab.active {
+  background: var(--gold);
+  border: 2px solid #000;
+}
+
+.top-tab-spacer {
+  flex: 1;
+  background: #8c8c8c;
+}
+
+/* --- Navigation précédent/suivant (contexte album) --- */
+
+#track-view {
+  /* Zone swipable pour Précédent/Suivant : laisse le scroll vertical au
+     navigateur mais empêche son geste horizontal par défaut (et la
+     sélection de texte) de "manger" le swipe avant que le JS ne le
+     reçoive. Les sliders de notation ont leur propre override juste en
+     dessous pour ne pas être affectés par cette restriction. */
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#track-view input[type="range"] {
+  /* Un slider doit garder son geste horizontal natif complet, même à
+     l'intérieur d'une zone par ailleurs restreinte à pan-y ci-dessus. */
+  touch-action: none;
+}
+
+.track-nav-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 20px 0;
+}
+
+.track-nav-btn {
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+
+.track-nav-btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.track-nav-btn:disabled {
+  color: var(--grey);
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* --- Header --- */
@@ -42,7 +284,7 @@ body {
   display: flex;
   justify-content: center;
   gap: 16px;
-  padding: 20px 20px 0;
+  padding: 16px 20px 0;
 }
 
 .cover-art {

@@ -8,21 +8,62 @@
 </head>
 <body>
   <div class="phone">
-    <header class="track-header">
-      <div class="cover-art" aria-hidden="true">♪</div>
-      <div class="track-meta">
-        <h1 id="track-title">—</h1>
-        <p class="artist" id="track-artist">—</p>
-        <p class="album" id="track-album">—</p>
-        <p class="tags" id="track-tags">—</p>
-        <div class="header-actions">
-          <button class="play-btn" type="button">▶ Écouter le morceau</button>
-          <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
-        </div>
-      </div>
-    </header>
+    <nav class="top-tabs">
+      <button class="top-tab" id="tab-my-ratings" type="button">Mes notations</button>
+      <button class="top-tab" id="tab-search" type="button">Recherche</button>
+      <span class="top-tab-spacer"></span>
+    </nav>
 
-    <section class="notation-card">
+    <section id="search-view">
+      <h1 class="search-title">Chercher un morceau, un album, un artiste</h1>
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Titre, artiste ou album…" autocomplete="off" />
+        <button id="search-btn" class="search-btn" type="button">Rechercher</button>
+      </div>
+      <p id="search-status" class="search-status" hidden></p>
+
+      <div class="category-tabs">
+        <button class="category-tab active" id="cat-tracks" type="button">Morceaux</button>
+        <button class="category-tab" id="cat-albums" type="button">Album</button>
+        <button class="category-tab" id="cat-artists" type="button">Artiste</button>
+      </div>
+      <ul id="results-list" class="search-results"></ul>
+    </section>
+
+    <section id="drilldown-view" hidden>
+      <button id="back-from-drilldown" class="drilldown-back" type="button">← Retour aux résultats</button>
+      <h1 class="search-title" id="drilldown-title">—</h1>
+      <p id="drilldown-status" class="search-status" hidden></p>
+      <ul id="drilldown-results" class="search-results"></ul>
+    </section>
+
+    <section id="my-ratings-view" hidden>
+      <h1 class="search-title">Mes notations</h1>
+      <p id="my-ratings-status" class="search-status" hidden></p>
+      <ul id="my-ratings-results" class="search-results"></ul>
+    </section>
+
+    <section id="track-view" hidden>
+      <div class="track-nav-row" id="track-nav-row" hidden>
+        <button id="prev-track-btn" class="track-nav-btn" type="button">‹ Précédent</button>
+        <button id="next-track-btn" class="track-nav-btn" type="button">Suivant ›</button>
+      </div>
+
+      <header class="track-header" id="track-header">
+        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="track-meta">
+          <h1 id="track-title">—</h1>
+          <p class="artist" id="track-artist">—</p>
+          <p class="album" id="track-album">—</p>
+          <p class="tags" id="track-tags">—</p>
+          <div class="header-actions">
+            <button class="play-btn" type="button">▶ Écouter le morceau</button>
+            <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="notation-card">
       <div class="notation-title-row">
         <h2>MA NOTATION <span class="global-inline">- <span id="global-value">—</span>/10</span></h2>
         <button id="classic-btn" class="classic-toggle" type="button">
@@ -100,6 +141,7 @@
           </div>
         </div>
       </div>
+    </section>
     </section>
   </div>
 
