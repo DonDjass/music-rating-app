@@ -293,6 +293,23 @@ directe.
 **Justification :** aucune autre source disponible. À comparer avec la
 vraie maquette dès qu'elle sera accessible — écarts probables sur la
 disposition exacte des blocs.
+**MISE À JOUR (2026-09-07)** : les maquettes sont maintenant dans le dépôt
+(`MCK-TRACK-001/002/003` + `Ajustement mockup.png`, commitées dans
+`418f57c`). Passe d'alignement du style de la fiche sur
+`Ajustement mockup.png` (référence la plus récente) : agrandissement de la
+pochette, du titre, du bouton "Écouter le morceau" (désormais pleine
+largeur), du cœur, des pills NOTE AU FEELING / CRITÈRES, des valeurs de
+sliders et des boutons Réinitialiser/Abandonner/Enregistrer (pleine
+largeur). Structure HTML inchangée (elle collait déjà). Divergences
+conservées : §11bis-2 (pill active dorée pleine, pas de variante pâle).
+Hors périmètre, non repris de 001/002/003 : la carte "NOTATION DE LA
+COMMUNAUTE" (agrégation communautaire, cf. §3 — nécessite GD-00001).
+**Jugement non confirmé** : la barre "note par critères" en lecture seule
+passe d'un ton olive terne (`#8a8578`) à un gris clair (`#d2d2d2`) pour
+coller à `Ajustement mockup.png` ; elle reste sans curseur donc toujours
+lisible comme non manipulable (BR-00037). À valider visuellement.
+**Non vérifié dans un navigateur** — ajustements CSS relus seulement, à
+confirmer sur le téléphone / navigateur.
 
 ### 11bis. Interprétation de deux bugs signalés (contexte perdu)
 **Contexte :** l'utilisateur a signalé "doublon des critères" et "affichage
