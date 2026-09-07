@@ -16,6 +16,7 @@
   --btn-pink: #f3a9ad;
   --btn-green: #57c98d;
   --heart-pink: #f4a19c;
+  --tab-bar-bg: #1b1b1d;
 }
 
 * {
@@ -33,15 +34,23 @@ body {
 .phone {
   max-width: 430px;
   margin: 0 auto;
-  padding-bottom: 80px;
+  padding-bottom: 96px;
 }
 
 /* --- Recherche --- */
 
 #search-view,
 #my-ratings-view,
-#drilldown-view {
+#drilldown-view,
+#home-view,
+#settings-view {
   padding: 20px 20px 28px;
+}
+
+.placeholder-msg {
+  margin: 16px 4px 0;
+  color: var(--grey);
+  font-size: 14px;
 }
 
 .category-tabs {
@@ -202,35 +211,50 @@ body {
   z-index: 10;
   display: flex;
   align-items: stretch;
-  background: #8c8c8c;
-  padding: 10px;
-  gap: 0;
-  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.4);
+  /* Gris foncé plein (se démarque du noir de l'appli) + liseré doré en haut
+     pour la rendre bien visible. */
+  background: var(--tab-bar-bg);
+  border-top: 1px solid rgba(244, 196, 48, 0.45);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.55);
+  padding: 9px 0 max(11px, env(safe-area-inset-bottom));
 }
 
 .top-tab {
   flex: 1;
-  background: var(--gold-pale);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
   border: none;
-  color: #171412;
-  font-weight: 800;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding: 12px 10px;
+  color: rgba(245, 245, 245, 0.6);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  padding: 4px 2px;
   cursor: pointer;
-  border-radius: 6px;
-  margin-right: 2px;
+  transition: color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.top-tab-label {
+  white-space: nowrap;
+}
+
+.top-tab-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .top-tab.active {
-  background: var(--gold);
-  border: 2px solid #000;
+  color: var(--gold);
 }
 
-.top-tab-spacer {
-  flex: 1;
-  background: #8c8c8c;
+.top-tab.active .top-tab-icon .fillable {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* --- Navigation précédent/suivant (contexte album) --- */

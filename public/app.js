@@ -2,7 +2,7 @@
 
 let track = null; // dernier état enregistré, renvoyé par le serveur
 let editing = null; // 'feeling' | 'criteria' | null
-let currentSection = "search"; // 'search' | 'my-ratings' — section active dans la barre d'onglets
+let currentSection = "search"; // 'home' | 'search' | 'my-ratings' | 'settings' — onglet actif
 
 // Contexte "album" : { tracks: [...], index } quand le morceau affiché vient
 // de la tracklist d'un album (drill-down) — permet Précédent/Suivant.
@@ -15,9 +15,13 @@ let criteriaDraft = { performance: null, texte: null, production: null };
 
 const el = (id) => document.getElementById(id);
 
+const tabHome = el("tab-home");
 const tabSearch = el("tab-search");
 const tabMyRatings = el("tab-my-ratings");
+const tabSettings = el("tab-settings");
 
+const homeView = el("home-view");
+const settingsView = el("settings-view");
 const searchView = el("search-view");
 const trackView = el("track-view");
 const searchInput = el("search-input");
@@ -366,37 +370,48 @@ likeBtn.addEventListener("click", async () => {
 
 // --- Recherche ---
 
+const ALL_VIEWS = [homeView, searchView, drilldownView, myRatingsView, settingsView, trackView];
+
+function showOnly(view) {
+  for (const v of ALL_VIEWS) v.hidden = v !== view;
+}
+
 function updateTabBar() {
+  tabHome.classList.toggle("active", currentSection === "home");
   tabSearch.classList.toggle("active", currentSection === "search");
   tabMyRatings.classList.toggle("active", currentSection === "my-ratings");
+  tabSettings.classList.toggle("active", currentSection === "settings");
+}
+
+function showHomeView() {
+  currentSection = "home";
+  updateTabBar();
+  showOnly(homeView);
+}
+
+function showSettingsView() {
+  currentSection = "settings";
+  updateTabBar();
+  showOnly(settingsView);
 }
 
 function showSearchView() {
   currentSection = "search";
   updateTabBar();
-  trackView.hidden = true;
-  myRatingsView.hidden = true;
-  drilldownView.hidden = true;
-  searchView.hidden = false;
+  showOnly(searchView);
 }
 
 function showTrackView() {
   // La section active (Recherche ou Mes notations) ne change pas : on garde
   // une trace visuelle de "d'où on vient" même en consultant une fiche.
   updateTabBar();
-  searchView.hidden = true;
-  myRatingsView.hidden = true;
-  drilldownView.hidden = true;
-  trackView.hidden = false;
+  showOnly(trackView);
 }
 
 function showMyRatingsView() {
   currentSection = "my-ratings";
   updateTabBar();
-  searchView.hidden = true;
-  trackView.hidden = true;
-  drilldownView.hidden = true;
-  myRatingsView.hidden = false;
+  showOnly(myRatingsView);
 }
 
 function showDrilldownView() {
@@ -404,12 +419,11 @@ function showDrilldownView() {
   // depuis la recherche : on reste dans la section "Recherche".
   currentSection = "search";
   updateTabBar();
-  searchView.hidden = true;
-  trackView.hidden = true;
-  myRatingsView.hidden = true;
-  drilldownView.hidden = false;
+  showOnly(drilldownView);
 }
 
+tabHome.addEventListener("click", showHomeView);
+tabSettings.addEventListener("click", showSettingsView);
 tabSearch.addEventListener("click", showSearchView);
 tabMyRatings.addEventListener("click", () => {
   showMyRatingsView();

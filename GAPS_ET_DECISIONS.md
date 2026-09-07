@@ -7,6 +7,41 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Modèle de données — table `ratings` générique + table `rating_criteria` séparée — DÉCISION D'ARCHITECTURE CONFIRMÉE (2026-09-08)
+
+**Ce n'est pas un écart au spec ni un choix provisoire : c'est la cible
+d'architecture validée. Ne pas revenir dessus sans décision explicite.**
+
+**Décision :**
+- **Une seule table `ratings`**, générique, avec un **champ « type d'entité »**
+  (`entity_type` : `track` | `album` | `artist`) distinguant ce qui est noté.
+  Elle porte les éléments communs à tous les niveaux : identifiant MusicBrainz,
+  métadonnées figées, NOTE AU FEELING, NOTE GLOBALE, statut Classic, « J'aime ».
+- **Une table séparée `rating_criteria`** (une ligne par critère : `rating_id`,
+  `nom_critère`, `valeur`) pour l'évaluation par critères, dont le **nombre et la
+  nature varient selon le niveau** (morceau : Performance / Texte / Production ;
+  album et artiste : jeux de critères différents, non encore spécifiés). La NOTE
+  PAR CRITÈRES reste calculée (moyenne des critères renseignés), pas stockée dans
+  cette table.
+
+**Justification :**
+- Le spec traite morceau, album et artiste comme trois entités notables
+  (RQ-00001/2/3) partageant la même logique de notation (feeling + critères +
+  globale + Classic) — une table générique évite trois schémas parallèles.
+- Les critères par niveau ne sont pas connus d'avance et ne sont pas au même
+  nombre : les figer en colonnes (`crit_performance`, `crit_texte`…) ne passe pas
+  à l'échelle album/artiste. Une table clé/valeur le permet sans migration de
+  schéma à chaque nouveau critère.
+
+**État actuel du code (2026-09-08) — NON ENCORE MIGRÉ :** `server.js` utilise
+encore une table `ratings` unique avec les critères en colonnes fixes
+(`crit_performance`, `crit_texte`, `crit_production`) et sans `entity_type`
+(implicitement `track`). Cf. §R2 et §GD-00002-1 ci-dessous, qui décrivent l'état
+transitoire. La migration vers le modèle ci-dessus reste à faire ; ces deux
+entrées sont donc désormais de l'historique, pas la cible.
+
+---
+
 ## Swipe tactile pour Précédent/Suivant (hors spec)
 
 Ajouté à la demande de l'utilisateur, en plus des boutons. Choix faits
@@ -260,11 +295,15 @@ besoin redevient nécessaire (l'API existe toujours).
 clique "Enregistrer" sans avoir défini de valeur (feeling) ou avec des
 critères partiellement renseignés.
 **Choix :** le bouton "Enregistrer" est désactivé tant que la NOTE AU
-FEELING n'a pas de valeur, ou que les trois critères ne sont pas tous
-renseignés.
-**Justification :** cohérent avec SC-00041 ("les trois critères ont été
-renseignés" avant l'étape d'enregistrement) ; évite un enregistrement
-partiel non prévu par CR-00039.
+FEELING n'a pas de valeur, ou qu'**aucun** des trois critères n'est
+renseigné.
+**MISE À JOUR (2026-09-08) — saisie partielle des critères autorisée :** on
+peut enregistrer avec 1 ou 2 critères sur 3 ; la NOTE PAR CRITÈRES est alors
+la moyenne des seuls critères renseignés (`averageOfSetCriteria` côté front,
+`handleSaveCriteria` côté serveur). Cela **s'écarte de CR-00039 et de
+ST-00044** ("les trois critères ont été renseignés" avant l'enregistrement) :
+changement de spec proposé dans `SPEC_UPDATES_PROPOSEES.md`, à répercuter dans
+le fichier Excel source. Reste bloqué : enregistrer zéro critère.
 
 ### 8. Méthode d'arrondi
 **Contexte :** CR-00039 et CR-00060 disent "arrondi au dixième" sans
@@ -362,12 +401,13 @@ locale.
 
 ## Écarts explicites (hors ambiguïté — demandés directement, notés pour mémoire)
 
-- **Incrément de la NOTE AU FEELING = 1** au lieu de 0,5 (contredit
-  BR-00015) : demandé explicitement pour simplifier cette première passe.
+- **Incrément de la NOTE AU FEELING = 1** au lieu de 0,5 (contredisait
+  BR-00015) : **RÉSOLU (2026-09-08)** — le slider "Note au feeling" est repassé
+  à `step="0.5"` (`public/index.html`), conforme à BR-00015. Plus d'écart.
 - **Gestion d'erreur réseau minimale** (pas de retry, pas de tous les cas
   d'échec type SC-00076) : demandé explicitement.
 
-Ces deux points ne sont pas des décisions prises face à une ambiguïté du
+Ces points ne sont pas des décisions prises face à une ambiguïté du
 spec — ce sont des simplifications directement instruites — mais ils
 créent un écart avec des règles `VALIDATED` du spec, donc listés ici pour
 qu'ils ne soient pas oubliés lors d'une passe de mise en conformité.
