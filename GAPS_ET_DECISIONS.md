@@ -30,6 +30,29 @@ sans confirmation :
   relecture du code. À tester sur le téléphone (déjà configuré pour
   accéder au serveur en local).
 
+## Barre d'onglets "Mes notations / Recherche" en bas d'écran — RÉSOLU (2026-09-07)
+
+**Contexte :** la maquette `Proposition header.png` place la barre
+d'onglets "MES NOTATIONS / RECHERCHE" en haut de l'écran, au-dessus de la
+fiche. L'implémentation la met en `position: fixed; bottom: 0` (barre de
+navigation type mobile), tout en gardant le code couleur de la maquette
+(fond gris, onglet actif doré plein + bordure noire, onglet inactif doré
+pâle, tiers droit gris).
+**Confirmé par l'utilisateur :** on garde la barre **en bas**. La position
+basse est le choix retenu ; la maquette n'est suivie que pour le style des
+onglets, pas pour leur emplacement. Écart assumé, pas une dérive.
+
+## Écran de recherche — conforme à `Mode Recherche.png` — RÉSOLU (2026-09-07)
+
+**Contexte :** l'écran de recherche développé (titre + barre pilule +
+"MORCEAUX / ALBUM / ARTISTE" en libellés dorés répartis, onglet actif
+souligné en doré) reprend la maquette `Mode Recherche.png` avec deux
+différences mineures : police des catégories un peu plus petite que la
+maquette, et présence d'un soulignement d'onglet actif absent de la
+maquette.
+**Confirmé par l'utilisateur :** on garde l'écran tel que développé, ces
+différences mineures sont acceptées.
+
 ## Navigation Précédent/Suivant dans un album (hors spec)
 
 Fonctionnalité ajoutée à la demande de l'utilisateur : deux boutons
@@ -270,6 +293,24 @@ directe.
 **Justification :** aucune autre source disponible. À comparer avec la
 vraie maquette dès qu'elle sera accessible — écarts probables sur la
 disposition exacte des blocs.
+**MISE À JOUR (2026-09-07)** : les maquettes sont maintenant dans le dépôt
+(`MCK-TRACK-001/002/003` + `Ajustement mockup.png`, commitées dans
+`418f57c`). Passe d'alignement du style de la fiche sur
+`Ajustement mockup.png` (référence la plus récente) : agrandissement de la
+pochette, du titre, du bouton "Écouter le morceau" (désormais pleine
+largeur), du cœur, des pills NOTE AU FEELING / CRITÈRES, des valeurs de
+sliders et des boutons Réinitialiser/Abandonner/Enregistrer (pleine
+largeur). Structure HTML inchangée (elle collait déjà). Divergences
+conservées : §11bis-2 (pill active dorée pleine, pas de variante pâle).
+Hors périmètre, non repris de 001/002/003 : la carte "NOTATION DE LA
+COMMUNAUTE" (agrégation communautaire, cf. §3 — nécessite GD-00001).
+La barre "note par critères" en lecture seule passe d'un ton olive terne
+(`#8a8578`) à un gris clair (`#d2d2d2`) pour coller à
+`Ajustement mockup.png` ; elle reste sans curseur donc toujours lisible
+comme non manipulable (BR-00037).
+**CONFIRMÉ (2026-09-07)** : rendu validé par l'utilisateur sur son
+téléphone, on garde en l'état. Autres points d'amélioration à voir plus
+tard.
 
 ### 11bis. Interprétation de deux bugs signalés (contexte perdu)
 **Contexte :** l'utilisateur a signalé "doublon des critères" et "affichage

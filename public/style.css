@@ -10,8 +10,8 @@
   --track-dark: #2a2a2e;
   --mini-fill: #e7e7e7;
   --mini-track: #3a3a3a;
-  --readonly-fill: #8a8578;
-  --readonly-track: #2c2a26;
+  --readonly-fill: #d2d2d2;
+  --readonly-track: #33322e;
   --btn-grey: #d9d9d9;
   --btn-pink: #f3a9ad;
   --btn-green: #57c98d;
@@ -282,43 +282,44 @@ body {
 
 .track-header {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   gap: 16px;
-  padding: 16px 20px 0;
+  padding: 18px 20px 0;
 }
 
 .cover-art {
-  width: 120px;
-  height: 120px;
+  width: 148px;
+  height: 148px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: linear-gradient(160deg, #3a2f22, #171412);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
+  font-size: 40px;
   color: var(--gold);
 }
 
 .track-meta {
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
   padding-top: 2px;
 }
 
 .track-meta h1 {
   margin: 0;
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--white);
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .track-meta .artist {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: var(--gold);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .track-meta .album {
@@ -330,36 +331,38 @@ body {
 .track-meta .tags {
   margin: 4px 0 0;
   color: var(--grey);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .play-btn {
+  flex: 1;
+  min-width: 0;
   background: var(--gold);
   border: none;
   color: #171412;
   font-weight: 800;
-  font-size: 11px;
-  padding: 6px 12px;
+  font-size: 13px;
+  padding: 11px 14px;
   border-radius: 999px;
   cursor: default;
   white-space: nowrap;
 }
 
 .like-btn {
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
   background: transparent;
   color: var(--white);
-  font-size: 13px;
+  font-size: 17px;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -389,8 +392,8 @@ body {
 
 .notation-title-row h2 {
   margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.04em;
+  font-size: 17px;
+  letter-spacing: 0.02em;
   font-weight: 800;
   color: var(--white);
 }
@@ -415,12 +418,12 @@ body {
   font-style: italic;
   font-family: Georgia, "Times New Roman", serif;
   color: var(--grey);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .classic-star {
   color: var(--grey);
-  font-size: 19px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -464,14 +467,14 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   background: var(--gold);
   border: none;
   color: #171412;
   font-weight: 800;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.01em;
-  padding: 8px 10px;
+  padding: 9px 14px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
@@ -485,7 +488,7 @@ body {
    le bouton lui-même garde sa couleur pleine, il n'a pas de variante pâle. */
 
 .pencil {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .slider-block {
@@ -507,11 +510,11 @@ body {
 }
 
 .slider-value {
-  width: 42px;
+  width: 44px;
   flex-shrink: 0;
   text-align: right;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--white);
 }
 
@@ -715,17 +718,19 @@ input[type="range"]::-moz-range-track {
   display: flex;
   justify-content: center;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 8px;
+  width: 100%;
 }
 
 .btn {
-  flex-shrink: 0;
+  flex: 1;
   white-space: nowrap;
+  text-align: center;
   border: none;
-  border-radius: 4px;
-  padding: 4px 7px;
+  border-radius: 5px;
+  padding: 9px 6px;
   font-weight: 800;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.01em;
   color: #171412;
