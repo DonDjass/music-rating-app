@@ -21,6 +21,14 @@
   box-sizing: border-box;
 }
 
+/* Un élément avec l'attribut `hidden` doit rester masqué même si sa classe
+   lui donne un `display: flex/grid/...` (une règle d'auteur bat la règle
+   `[hidden]` de la feuille de style du navigateur). Sans ça, la liste
+   d'historique de recherche vide s'affichait comme une barre arrondie. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--black);
