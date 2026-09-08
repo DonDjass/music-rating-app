@@ -209,6 +209,81 @@ fiche déjà créée ne se met pas à jour automatiquement.
 fiche ; acceptable pour une appli de notation personnelle où la valeur
 qui compte est la note, pas la fraîcheur des métadonnées.
 
+### R6. Historique des recherches (hors spec) — 2026-09-08
+Demandé par l'utilisateur : au focus du champ de recherche (avant saisie),
+afficher les 10 dernières recherches, plus récente en tête ; un clic relance
+la recherche.
+**Choix faits :**
+- **Stockage SQLite** (nouvelle table `search_history`, endpoints
+  `GET/POST /api/search-history`) plutôt que `localStorage` : l'utilisateur
+  accède au serveur local depuis son téléphone, un stockage côté serveur rend
+  l'historique disponible quel que soit l'appareil/navigateur. Pas de notion
+  de compte (historique global unique, cohérent avec §GD-00002-3).
+- **Une ligne par requête distincte** : ré-insérer une requête déjà présente
+  la remonte en tête (DELETE puis INSERT, colonne `query` UNIQUE). Pas de
+  compteur d'occurrences.
+- **L'historique = des chaînes de requête**, pas des entités : « toutes
+  catégories confondues » est interprété comme « la recherche elle-même n'est
+  pas catégorisée » (une requête interroge déjà les 3 endpoints). Cliquer une
+  entrée relance la recherche complète, pas une catégorie précise.
+- **Enregistré uniquement sur recherche réussie** (best-effort, n'interrompt
+  jamais l'affichage des résultats). Une requête sans résultat est quand même
+  enregistrée (c'est une recherche effectuée).
+
+### R7. Tracklist d'un album — mise en page façon "Proposition Tracklist.png" — 2026-09-08
+Demandé par l'utilisateur : ne plus répéter artiste/album/année sur chaque
+ligne, puis (2ᵉ passe) suivre la maquette `Proposition Tracklist.png`.
+**Choix :**
+- **En-tête de la tracklist** : nom de l'album (centré, gras, majuscules)
+  + sous-titre `Artiste · Année` (doré). **Figé** (`position: sticky`) :
+  reste collé en haut pendant le défilement de la liste, avec fond noir
+  pleine largeur qui masque les lignes défilant dessous.
+  `/api/album-tracks` renvoie `artist` et `date` au niveau racine pour
+  composer cet en-tête quel que soit le point d'entrée (recherche,
+  résolution, clic album depuis une fiche).
+- **Lignes** : titre du morceau à gauche (tronqué si trop long), durée
+  `M:SS` à droite, filet de séparation clair sous chaque ligne, pas
+  d'encadré/pastille. Classes `.tracklist`, `.tracklist-row`,
+  `.tracklist-header`.
+- **Pas de numéro de piste affiché** : la maquette montre un seul libellé
+  par ligne (« Piste N » = texte de remplacement) ; l'ordre de la liste
+  porte déjà la séquence. Le champ `position` reste renvoyé par l'API (tri /
+  usage futur) mais n'est plus préfixé au titre. À réintroduire si un numéro
+  visible est souhaité.
+- **Divergences mineures assumées vs maquette** : la durée n'est pas
+  parfaitement alignée sur la colonne de la maquette (léger `padding-right`
+  en %), et le bouton « ← Retour aux résultats » reste au-dessus de
+  l'en-tête (hors cadre de la maquette).
+Les métadonnées complètes restent transmises à la fiche morceau à la
+sélection — seul l'affichage de la liste change.
+**Non touché :** la liste des morceaux d'un *artiste* (drill-down artiste)
+garde l'ancien format « artiste — année » ; pas demandé.
+
+### R8. Artiste et album cliquables depuis la fiche morceau — 2026-09-08
+Demandé par l'utilisateur : cliquer le nom de l'artiste / de l'album en
+en-tête de fiche ouvre la fiche correspondante.
+**Choix faits :**
+- **La base ne stocke que les noms** (pas les mbid artiste/album — cf. la
+  décision d'archi en tête de fichier, migration à venir). On résout donc le
+  nom → entité MusicBrainz à la volée : nouveaux endpoints
+  `GET /api/resolve-artist?name=` et `GET /api/resolve-album?title=&artist=`
+  (premier résultat de recherche MusicBrainz). Si l'album a un `release_mbid`
+  connu (morceau noté depuis une tracklist), on l'utilise directement sans
+  résolution.
+- **« Fiche artiste » / « fiche album » = le drill-down existant** (morceaux
+  de l'artiste / tracklist de l'album), pas une nouvelle vue dédiée — même
+  comportement qu'un clic depuis les résultats de recherche.
+- **Conséquence de navigation :** ouvrir un artiste/album depuis une fiche
+  bascule l'onglet actif sur « Recherche » (le drill-down appartient au
+  domaine recherche) ; le bouton « ← Retour aux résultats » ramène à la liste
+  de résultats de recherche, éventuellement vide si on venait de « Mes
+  notations ». Quirk assumé.
+- **Résolution best-effort :** si MusicBrainz ne renvoie rien ou est
+  indisponible, un toast « Fiche artiste/album introuvable » s'affiche et on
+  reste sur la fiche.
+- Petite amélioration au passage : `server.js` lit `process.env.PORT`
+  (défaut 3000) pour pouvoir lancer une 2ᵉ instance de test sans conflit.
+
 ---
 
 ## GD-00002 — Écran de notation d'un morceau

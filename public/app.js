@@ -27,6 +27,7 @@ const trackView = el("track-view");
 const searchInput = el("search-input");
 const searchBtn = el("search-btn");
 const searchStatus = el("search-status");
+const searchHistoryEl = el("search-history");
 const resultsList = el("results-list");
 const catTracks = el("cat-tracks");
 const catAlbums = el("cat-albums");
@@ -145,6 +146,17 @@ function render() {
   trackArtistEl.textContent = track.artist;
   trackAlbumEl.textContent = track.albumTitle;
   trackTagsEl.textContent = track.tags;
+
+  // L'artiste et l'album de l'en-tête sont cliquables (ouvrent leur fiche)
+  // dès qu'on a un nom exploitable.
+  trackArtistEl.classList.toggle(
+    "linkable",
+    !!track.artist && track.artist !== "Artiste inconnu"
+  );
+  trackAlbumEl.classList.toggle(
+    "linkable",
+    !!track.albumTitle && track.albumTitle !== "Album inconnu"
+  );
 
   classicBtn.classList.toggle("active", track.isClassic);
   classicStarEl.textContent = track.isClassic ? "★" : "☆";
@@ -368,6 +380,45 @@ likeBtn.addEventListener("click", async () => {
   }
 });
 
+// --- Navigation depuis la fiche : artiste / album cliquables ---
+// On n'a que le nom en base : on résout vers l'entité MusicBrainz puis on
+// ouvre le drill-down correspondant (morceaux de l'artiste / tracklist de
+// l'album), comme un clic depuis les résultats de recherche.
+
+trackArtistEl.addEventListener("click", async () => {
+  if (!trackArtistEl.classList.contains("linkable")) return;
+  showToast("Recherche de l'artiste…");
+  try {
+    const { artist } = await api(
+      `/api/resolve-artist?name=${encodeURIComponent(track.artist)}`,
+      "GET"
+    );
+    if (artist) openArtist(artist);
+    else showToast("Fiche artiste introuvable.");
+  } catch (err) {
+    showToast("Fiche artiste introuvable.");
+  }
+});
+
+trackAlbumEl.addEventListener("click", async () => {
+  if (!trackAlbumEl.classList.contains("linkable")) return;
+  if (track.releaseMbid) {
+    openAlbum({ mbid: track.releaseMbid, title: track.albumTitle, artist: track.artist });
+    return;
+  }
+  showToast("Recherche de l'album…");
+  try {
+    const { album } = await api(
+      `/api/resolve-album?title=${encodeURIComponent(track.albumTitle)}&artist=${encodeURIComponent(track.artist || "")}`,
+      "GET"
+    );
+    if (album) openAlbum(album);
+    else showToast("Fiche album introuvable.");
+  } catch (err) {
+    showToast("Fiche album introuvable.");
+  }
+});
+
 // --- Recherche ---
 
 const ALL_VIEWS = [homeView, searchView, drilldownView, myRatingsView, settingsView, trackView];
@@ -480,6 +531,35 @@ function createTrackResultItem(r, context = null) {
   return buildResultItem(r.title, trackMeta(r), () => selectTrack(r, context));
 }
 
+function formatMsShort(ms) {
+  if (!ms) return "";
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+// Ligne de tracklist d'album (cf. "Proposition Tracklist.png") : titre du
+// morceau à gauche, durée à droite, filet de séparation ; artiste/album/année
+// ne sont pas répétés (ils sont dans l'en-tête de la tracklist).
+function createTracklistRow(r, context) {
+  const li = document.createElement("li");
+  li.className = "tracklist-row";
+
+  const titleEl = document.createElement("span");
+  titleEl.className = "tracklist-title";
+  titleEl.textContent = r.title;
+  li.appendChild(titleEl);
+
+  const durEl = document.createElement("span");
+  durEl.className = "tracklist-duration";
+  durEl.textContent = formatMsShort(r.durationMs);
+  li.appendChild(durEl);
+
+  li.addEventListener("click", () => selectTrack(r, context));
+  return li;
+}
+
 function createAlbumResultItem(a) {
   const parts = [a.artist];
   if (a.date) parts.push(a.date.slice(0, 4));
@@ -538,6 +618,8 @@ async function runSearch() {
   const q = searchInput.value.trim();
   if (!q) return;
 
+  hideSearchHistory();
+  searchInput.blur();
   setSearchStatus("Recherche en cours…");
   resultsList.innerHTML = "";
 
@@ -546,10 +628,61 @@ async function runSearch() {
     lastSearchData = { tracks: data.tracks || [], albums: data.albums || [], artists: data.artists || [] };
     setSearchStatus(null);
     renderCurrentCategory();
+    // Best-effort : l'historique ne doit pas bloquer l'affichage des résultats.
+    api("/api/search-history", "POST", { query: q }).catch(() => {});
   } catch (err) {
     setSearchStatus("Recherche indisponible. Réessaie.");
   }
 }
+
+// --- Historique des recherches (affiché au focus du champ, avant saisie) ---
+
+function hideSearchHistory() {
+  searchHistoryEl.hidden = true;
+  searchHistoryEl.innerHTML = "";
+}
+
+function renderSearchHistory(queries) {
+  searchHistoryEl.innerHTML = "";
+  if (!queries.length) {
+    searchHistoryEl.hidden = true;
+    return;
+  }
+  for (const q of queries) {
+    const li = document.createElement("li");
+    li.className = "search-history-item";
+    li.textContent = q;
+    // mousedown/touchstart : agir avant le blur du champ qui masquerait la liste.
+    li.addEventListener("mousedown", (e) => e.preventDefault());
+    li.addEventListener("click", () => {
+      searchInput.value = q;
+      runSearch();
+    });
+    searchHistoryEl.appendChild(li);
+  }
+  searchHistoryEl.hidden = false;
+}
+
+async function maybeShowSearchHistory() {
+  if (searchInput.value.trim()) return; // l'utilisateur tape déjà une requête
+  try {
+    const data = await api("/api/search-history", "GET");
+    if (searchInput.value.trim()) return; // a commencé à taper entre-temps
+    renderSearchHistory(data.queries || []);
+  } catch (err) {
+    hideSearchHistory();
+  }
+}
+
+searchInput.addEventListener("focus", maybeShowSearchHistory);
+searchInput.addEventListener("input", () => {
+  if (searchInput.value.trim()) hideSearchHistory();
+  else maybeShowSearchHistory();
+});
+searchInput.addEventListener("blur", () => {
+  // Laisser le temps à un clic sur un élément de la liste de se déclencher.
+  setTimeout(hideSearchHistory, 150);
+});
 
 // --- Drill-down : tracklist d'un album ou morceaux d'un artiste ---
 
@@ -564,7 +697,9 @@ function setDrilldownStatus(message) {
 }
 
 async function openAlbum(album) {
-  drilldownTitle.textContent = album.title;
+  drilldownTitle.className = "search-title";
+  drilldownTitle.textContent = album.title || "—";
+  drilldownResults.className = "search-results";
   drilldownResults.innerHTML = "";
   setDrilldownStatus("Chargement…");
   showDrilldownView();
@@ -573,15 +708,40 @@ async function openAlbum(album) {
     const data = await api(`/api/album-tracks?mbid=${encodeURIComponent(album.mbid)}`, "GET");
     const tracks = data.tracks || [];
     setDrilldownStatus(null);
+
+    // En-tête figé (cf. "Proposition Tracklist.png") : nom de l'album, puis
+    // artiste · année en sous-titre. Reste collé en haut au défilement (CSS).
+    // Fallback sur les infos de `album` (résultat de recherche / fiche) si
+    // l'API album-tracks ne les fournit pas.
+    const headerArtist = data.artist || album.artist || "";
+    const year = (data.date || album.date || "").slice(0, 4);
+    drilldownTitle.className = "tracklist-header";
+    drilldownTitle.textContent = "";
+
+    const albumEl = document.createElement("span");
+    albumEl.className = "tracklist-album";
+    albumEl.textContent = data.title || album.title || "—";
+    drilldownTitle.appendChild(albumEl);
+
+    const subParts = [headerArtist, year].filter(Boolean);
+    if (subParts.length) {
+      const subEl = document.createElement("span");
+      subEl.className = "tracklist-sub";
+      subEl.textContent = subParts.join(" · ");
+      drilldownTitle.appendChild(subEl);
+    }
+
     drilldownResults.innerHTML = "";
     if (tracks.length === 0) {
+      drilldownResults.className = "search-results";
       const li = document.createElement("li");
       li.className = "search-empty";
       li.textContent = "Aucun morceau trouvé pour cet album.";
       drilldownResults.appendChild(li);
     } else {
+      drilldownResults.className = "tracklist";
       tracks.forEach((r, index) => {
-        drilldownResults.appendChild(createTrackResultItem(r, { tracks, index }));
+        drilldownResults.appendChild(createTracklistRow(r, { tracks, index }));
       });
     }
   } catch (err) {
@@ -590,7 +750,9 @@ async function openAlbum(album) {
 }
 
 async function openArtist(artist) {
+  drilldownTitle.className = "search-title";
   drilldownTitle.textContent = artist.name;
+  drilldownResults.className = "search-results";
   drilldownResults.innerHTML = "";
   setDrilldownStatus("Chargement…");
   showDrilldownView();

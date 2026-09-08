@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const MB_HEADERS = {
@@ -58,6 +58,16 @@ for (const [name, type] of Object.entries(NEW_COLUMNS)) {
     db.exec(`ALTER TABLE ratings ADD COLUMN ${name} ${type}`);
   }
 }
+
+// Historique des recherches — stockage local simple, sans notion d'utilisateur.
+// Une seule ligne par requête distincte (la ré-insertion la remonte en tête).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS search_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL UNIQUE,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
 // --- Recherche MusicBrainz (recherche de morceaux, couvre aussi les
 // recherches par artiste ou par album puisque MusicBrainz indexe ces
@@ -160,13 +170,14 @@ async function getReleaseTracks(releaseMbid) {
         artist,
         album,
         date,
+        position: t.number ?? t.position ?? null,
         durationMs: t.length || t.recording.length || null,
         releaseMbid,
       });
     }
   }
 
-  return { title: album, tracks };
+  return { title: album, artist, date, tracks };
 }
 
 async function getArtistTracks(artistMbid, artistName) {
@@ -278,6 +289,54 @@ async function handleSearch(query, res) {
   } catch (err) {
     console.error(err);
     sendJson(res, 502, { error: "Recherche MusicBrainz indisponible. Réessaie." });
+  }
+}
+
+// Historique des recherches : on enregistre la requête (dé-doublonnée et
+// remontée en tête), et on relit les 10 plus récentes.
+function handleRecordSearch(body, res) {
+  const q = (body.query || "").trim();
+  if (!q) return sendJson(res, 400, { error: "Requête vide." });
+
+  db.prepare(`DELETE FROM search_history WHERE query = ?`).run(q);
+  db.prepare(`INSERT INTO search_history (query) VALUES (?)`).run(q);
+
+  sendJson(res, 200, { ok: true });
+}
+
+function handleGetSearchHistory(res) {
+  const rows = db
+    .prepare(`SELECT query FROM search_history ORDER BY id DESC LIMIT 10`)
+    .all();
+  sendJson(res, 200, { queries: rows.map((r) => r.query) });
+}
+
+// Résolution nom -> entité MusicBrainz, pour rendre l'artiste et l'album
+// cliquables depuis la fiche morceau (on n'a que leur nom en base).
+async function handleResolveArtist(name, res) {
+  const n = (name || "").trim();
+  if (!n) return sendJson(res, 400, { error: "Nom manquant." });
+  try {
+    const results = await searchArtists(n);
+    sendJson(res, 200, { artist: results[0] || null });
+  } catch (err) {
+    console.error(err);
+    sendJson(res, 502, { error: "MusicBrainz indisponible. Réessaie." });
+  }
+}
+
+async function handleResolveAlbum(title, artist, res) {
+  const t = (title || "").trim();
+  if (!t) return sendJson(res, 400, { error: "Titre manquant." });
+  try {
+    const query = artist
+      ? `release:"${t}" AND artist:"${artist}"`
+      : `release:"${t}"`;
+    const results = await searchReleases(query);
+    sendJson(res, 200, { album: results[0] || null });
+  } catch (err) {
+    console.error(err);
+    sendJson(res, 502, { error: "MusicBrainz indisponible. Réessaie." });
   }
 }
 
@@ -496,6 +555,24 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === "/api/my-ratings" && req.method === "GET") {
       return handleMyRatings(res);
+    }
+
+    if (pathname === "/api/search-history" && req.method === "GET") {
+      return handleGetSearchHistory(res);
+    }
+    if (pathname === "/api/search-history" && req.method === "POST") {
+      return handleRecordSearch(await readBody(req), res);
+    }
+
+    if (pathname === "/api/resolve-artist" && req.method === "GET") {
+      return await handleResolveArtist(url.searchParams.get("name"), res);
+    }
+    if (pathname === "/api/resolve-album" && req.method === "GET") {
+      return await handleResolveAlbum(
+        url.searchParams.get("title"),
+        url.searchParams.get("artist"),
+        res
+      );
     }
 
     if (pathname === "/api/album-tracks" && req.method === "GET") {
