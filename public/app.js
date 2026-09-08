@@ -144,16 +144,22 @@ function showToast(message) {
 }
 
 // Pop-up album : explication d'une note / action pas encore développée.
-// Se ferme au bout de 10 s, via le "×", ou en changeant d'écran.
+// Positionnée en absolu juste sous la ligne "MA NOTATION" (ne décale rien).
+// Fondu à l'affichage/disparition ; se ferme à 10 s, via le "×", ou en
+// changeant d'écran.
 function showAlbumPopup(message) {
   albumPopupText.textContent = message;
-  albumPopup.hidden = false;
+  // Ancrée sous la ligne notation, alignée sur sa largeur.
+  albumPopup.style.top = `${albumNotation.offsetTop + albumNotation.offsetHeight + 8}px`;
+  albumPopup.style.left = `${albumNotation.offsetLeft}px`;
+  albumPopup.style.width = `${albumNotation.offsetWidth}px`;
+  albumPopup.classList.add("visible");
   clearTimeout(showAlbumPopup._t);
   showAlbumPopup._t = setTimeout(hideAlbumPopup, 10000);
 }
 
 function hideAlbumPopup() {
-  albumPopup.hidden = true;
+  albumPopup.classList.remove("visible");
   clearTimeout(showAlbumPopup._t);
 }
 

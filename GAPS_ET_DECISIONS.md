@@ -354,11 +354,13 @@ L'utilisateur signale que les toasts passaient **derrière la barre d'onglets**
   durée 2,6 s. Réservé au **statut bref** : « Ajouté / Retiré des Classics »,
   « Impossible de modifier le statut Classic », « Fiche artiste/album
   introuvable », « Impossible de modifier « J'aime » », « Recherche de… ».
-- **Pop-up album** (`.album-popup`) : petite carte qui apparaît **juste sous
-  la ligne « MA NOTATION »** (**fond jaune très pâle `#fdf5cf`, texte noir**,
-  bouton « × »). Se ferme **au bout de 10 s**, via le « × », ou en changeant
-  d'album/artiste (`hideAlbumPopup()` dans `openAlbum` / `openArtist`).
-  Utilisée pour les
+- **Pop-up album** (`.album-popup`) : petite carte **positionnée en absolu**
+  juste sous la ligne « MA NOTATION » (le JS calcule `top`/`left`/`width`
+  d'après `.album-notation`) — elle **ne décale pas** les boutons « Noter… ».
+  **Fond jaune très pâle `#fdf5cf`, texte noir**, bouton « × ». Apparition /
+  disparition en **fondu 0,35 s** (`opacity` + `visibility`). Se ferme **au
+  bout de 10 s**, via le « × », ou en changeant d'album/artiste
+  (`hideAlbumPopup()` dans `openAlbum` / `openArtist`). Utilisée pour les
   **explications** (les 4 textes des notes d'album) et les actions **pas
   encore développées** (« Noter l'album », « Classic » album) — trop long /
   trop utile pour un toast fugace.

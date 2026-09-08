@@ -45,6 +45,11 @@ body {
   padding: 20px 20px 28px;
 }
 
+/* Repère pour positionner la pop-up album en absolu (sans décaler le reste). */
+#drilldown-view {
+  position: relative;
+}
+
 .placeholder-msg {
   margin: 16px 4px 0;
   color: var(--grey);
@@ -1017,17 +1022,26 @@ input[type="range"]::-moz-range-track {
 }
 
 /* --- Pop-up album : explication d'une note / action pas encore dispo.
-   Apparaît juste sous la ligne "MA NOTATION". Fond jaune très pâle, texte
-   noir. Se ferme au bout de 10 s ou via le "×". --- */
+   Placée en absolu juste sous la ligne "MA NOTATION" (le JS calcule top /
+   left / width) pour NE PAS décaler les boutons. Fond jaune très pâle,
+   texte noir. Fondu de 0,35 s ; se ferme à 10 s ou via le "×". --- */
 
 .album-popup {
-  position: relative;
-  margin: 12px 0 0;
+  position: absolute;
+  z-index: 15;
   background: #fdf5cf;
   color: #1a1a1a;
   border-radius: 12px;
   padding: 12px 36px 12px 14px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.album-popup.visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .album-popup-text {
