@@ -343,7 +343,30 @@ async function handleResolveAlbum(title, artist, res) {
 async function handleAlbumTracks(mbid, res) {
   if (!mbid) return sendJson(res, 400, { error: "mbid manquant." });
   try {
-    sendJson(res, 200, await getReleaseTracks(mbid));
+    const data = await getReleaseTracks(mbid);
+
+    // Enrichit chaque morceau avec sa NOTE GLOBALE locale (null si non noté),
+    // et indique si l'album lui-même est "aimé" (ligne ratings keyée sur le
+    // mbid de la release).
+    const mbids = data.tracks.map((t) => t.mbid).filter(Boolean);
+    const ratingByMbid = {};
+    if (mbids.length) {
+      const placeholders = mbids.map(() => "?").join(",");
+      const rows = db
+        .prepare(`SELECT mbid, global_rating FROM ratings WHERE mbid IN (${placeholders})`)
+        .all(...mbids);
+      for (const row of rows) ratingByMbid[row.mbid] = row.global_rating;
+    }
+    data.tracks = data.tracks.map((t) => ({
+      ...t,
+      globalRating: ratingByMbid[t.mbid] ?? null,
+    }));
+
+    const albumRow = db.prepare(`SELECT is_liked FROM ratings WHERE mbid = ?`).get(mbid);
+    data.releaseMbid = mbid;
+    data.isLiked = !!(albumRow && albumRow.is_liked);
+
+    sendJson(res, 200, data);
   } catch (err) {
     console.error(err);
     sendJson(res, 502, { error: "MusicBrainz indisponible. Réessaie." });
@@ -482,9 +505,11 @@ function handleSetClassic(mbid, body, res) {
 
 // "J'aime" : hors périmètre GD-00002, ajouté à la demande explicite de
 // l'utilisateur (cf. GAPS_ET_DECISIONS.md). Même schéma que le statut Classic.
+// Sert aussi pour "J'aime" un ALBUM : la ligne ratings est alors keyée sur le
+// mbid de la release (meta transmise pour ne pas créer une ligne "inconnue").
 function handleSetLiked(mbid, body, res) {
   const value = !!body.value;
-  const row = getOrCreateTrackRow(mbid);
+  const row = getOrCreateTrackRow(mbid, body.meta || {});
 
   db.prepare(`UPDATE ratings SET is_liked = ? WHERE id = ?`).run(value ? 1 : 0, row.id);
 

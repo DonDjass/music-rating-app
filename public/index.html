@@ -57,7 +57,46 @@
 
     <section id="drilldown-view" hidden>
       <button id="back-from-drilldown" class="drilldown-back" type="button">← Retour aux résultats</button>
-      <h1 class="search-title" id="drilldown-title">—</h1>
+
+      <header class="album-header" id="album-header" hidden>
+        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="track-meta">
+          <h1 id="album-title">—</h1>
+          <p class="artist" id="album-artist">—</p>
+          <p class="tags" id="album-year">—</p>
+          <div class="header-actions">
+            <button class="play-btn" type="button">▶ Écouter</button>
+            <button class="like-btn" id="album-like-btn" type="button" aria-label="J'aime">♡</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="album-notation" id="album-notation" hidden>
+        <span class="album-notation-label">MA NOTATION</span>
+        <button class="album-note" id="album-note-tracks" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note" id="album-note-feeling" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note" id="album-note-criteria" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note is-global" id="album-note-global" type="button">—/10</button>
+        <button class="classic-toggle album-classic is-disabled" id="album-classic-btn" type="button" aria-disabled="true" title="Bientôt disponible">
+          <span class="classic-word">Classic</span>
+          <span class="classic-star">☆</span>
+        </button>
+      </div>
+
+      <div id="album-popup" class="album-popup" hidden>
+        <button class="album-popup-close" id="album-popup-close" type="button" aria-label="Fermer">&times;</button>
+        <p class="album-popup-text" id="album-popup-text"></p>
+      </div>
+
+      <div class="album-actions" id="album-actions" hidden>
+        <button class="album-action-btn is-disabled" id="rate-album-btn" type="button" aria-disabled="true" title="Bientôt disponible">Noter l'album</button>
+        <button class="album-action-btn" id="rate-tracks-btn" type="button">Noter les morceaux</button>
+      </div>
+
+      <h1 class="search-title" id="drilldown-title" hidden>—</h1>
       <p id="drilldown-status" class="search-status" hidden></p>
       <ul id="drilldown-results" class="search-results"></ul>
     </section>

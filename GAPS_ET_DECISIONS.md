@@ -284,6 +284,85 @@ en-tête de fiche ouvre la fiche correspondante.
 - Petite amélioration au passage : `server.js` lit `process.env.PORT`
   (défaut 3000) pour pouvoir lancer une 2ᵉ instance de test sans conflit.
 
+### R9. Écran tracklist d'album enrichi — 2026-09-08
+Demandé par l'utilisateur : harmoniser l'écran tracklist avec la fiche morceau.
+**Choix faits :**
+- **En-tête riche** au lieu du bandeau texte : pochette (placeholder, comme
+  la fiche — cf. R4), titre, artiste (cliquable → `openArtistByName`), année,
+  bouton « ▶ Écouter » (décoratif, comme celui de la fiche morceau) et cœur
+  « J'aime ». **Supersède** la décision « en-tête figé » (§R7 / passes
+  précédentes) : plus de `position: sticky`, l'en-tête défile comme celui de
+  la fiche morceau. Classes réutilisées : `.cover-art`, `.track-meta`,
+  `.header-actions`, `.play-btn`, `.like-btn`.
+- **« J'aime » l'album** : persisté sur une ligne `ratings` keyée sur le
+  **mbid de la release** (via `PUT /api/tracks/<mbid>/like`, qui accepte
+  désormais un `meta` pour nommer correctement la ligne). C'est un usage
+  transitoire de la table générique en attendant `entity_type` (cf. décision
+  d'archi en tête de fichier). Une ligne « aimé seulement » n'apparaît pas
+  dans « Mes notations » (le filtre exige feeling/critères/Classic).
+- **« Noter l'album »** : bouton présent mais **inactif** (`.is-disabled`,
+  opacité 0.45, `cursor: not-allowed`, `title`/toast « Bientôt disponible »).
+  La notation d'album (RQ-00002) n'est pas développée ; le bouton prépare le
+  terrain visuel.
+- **« Noter les morceaux »** : ouvre la fiche du 1ᵉʳ morceau de la tracklist
+  (réutilise `selectTrack` + contexte album pour Précédent/Suivant).
+  Interprétation de « en mode notation » : l'écran de notation de morceau
+  (GD-00002) en consultation — pas un panneau d'édition ouvert d'office.
+  Désactivé si la tracklist est vide.
+- **NOTE GLOBALE par ligne** : `/api/album-tracks` fait un `JOIN` local
+  (`ratings.mbid IN (…)`) et renvoie `globalRating` par morceau (null si non
+  noté) → affiché à droite de la durée, « — » si pas de note. Renvoie aussi
+  `isLiked` (état du cœur album) et `releaseMbid`.
+
+### R9bis. Ligne « MA NOTATION » de l'album — 4 notes distinctes — 2026-09-08
+Demandé par l'utilisateur (visuel : `Prepa Vue Album.png`). Remplace la ligne
+« MA NOTATION » simple (héritée de la fiche morceau) par 4 notes :
+`MA NOTATION · <morceaux> | <feeling> | <critères> | <globale>`.
+
+- **1. Notation morceaux** (calculable maintenant) : moyenne des NOTE GLOBALE
+  des morceaux de l'album déjà notés (`globalRating != null`, c.-à-d. feeling
+  OU critères renseigné sur le morceau). « — » si aucun. Calcul côté client
+  dans `computeAlbumNotes` à partir des `globalRating` renvoyés par
+  `/api/album-tracks`.
+- **2. Notation au feeling (album)** et **3. Notation par critères (album)** :
+  pas encore développées → toujours « — ».
+- **4. NOTE GLOBALE (album)** = **moyenne des 3 notes ci-dessus en excluant
+  les non renseignées**, 1 décimale, pas d'arrondi à l'entier. Aujourd'hui
+  seule la note « morceaux » existe → globale = note morceaux. **Cette
+  formule (moyenne des disponibles) est actée et validée pour le futur** :
+  quand feeling/critères album seront développés, la globale les intègrera
+  sans changement de règle. Cohérent avec CR-00060→CR-00063 (même logique
+  « moyenne des notes disponibles ») transposée au niveau album.
+- **Décimales** : partout `n.toFixed(1)` (virgule) — jamais d'entier sec.
+  Format d'un slot : `8,5/10` si renseigné, `—/10` sinon.
+- **Style** : les 3 premières en écriture fine, dorées si note réelle, grises
+  si « — » ; la globale en gras, dorée si ≥1 des 3 renseignée, grise sinon.
+  Chaque note est cliquable → toast explicatif (textes fournis par
+  l'utilisateur, dans `ALBUM_NOTE_HELP`).
+- **Toggle « Classic » album** (à droite de la ligne, cf. `Prepa Vue Album.png`) :
+  affiché mais **purement décoratif** — grisé (`opacity: 0.5`,
+  `cursor: not-allowed`), jamais actif, clic → pop-up « Bientôt disponible ».
+  Pas de persistance ni de colonne dédiée ; à câbler quand la notation
+  d'album sera développée.
+
+### R9ter. Messages temporaires — deux mécanismes distincts — 2026-09-08
+L'utilisateur signale que les toasts passaient **derrière la barre d'onglets**
+(invisibles), et que certains messages ne conviennent pas à un toast fugace.
+- **Toast** (`.toast`) : repositionné **au-dessus de la barre d'onglets**
+  (`bottom: calc(80px + env(safe-area-inset-bottom))`, `z-index: 20`), coins
+  arrondis + `max-width` + `text-align:center` pour les messages un peu longs,
+  durée 2,6 s. Réservé au **statut bref** : « Ajouté / Retiré des Classics »,
+  « Impossible de modifier le statut Classic », « Fiche artiste/album
+  introuvable », « Impossible de modifier « J'aime » », « Recherche de… ».
+- **Pop-up album** (`.album-popup`) : petite carte qui apparaît **juste sous
+  la ligne « MA NOTATION »** (**fond jaune très pâle `#fdf5cf`, texte noir**,
+  bouton « × »). Se ferme **au bout de 10 s**, via le « × », ou en changeant
+  d'album/artiste (`hideAlbumPopup()` dans `openAlbum` / `openArtist`).
+  Utilisée pour les
+  **explications** (les 4 textes des notes d'album) et les actions **pas
+  encore développées** (« Noter l'album », « Classic » album) — trop long /
+  trop utile pour un toast fugace.
+
 ---
 
 ## GD-00002 — Écran de notation d'un morceau
