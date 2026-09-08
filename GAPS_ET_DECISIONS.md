@@ -403,6 +403,16 @@ Demande explicite de l'utilisateur.
   Les repères d'échelle repassent donc en positionnement normal (le curseur
   de 16px est de retour), la classe `.slider-ticks.flush` est supprimée.
 
+### 7quater. Boutons de section allégés — 2026-09-08
+Demande de l'utilisateur : ces boutons sont de simples labels de section
+cliquables, trop imposants.
+- Libellés raccourcis : « NOTE AU FEELING » → « AU FEELING », « NOTE PAR
+  CRITÈRES » → « PAR CRITÈRES ».
+- `.pill-toggle` : `font-size` 12 → 11px, `padding` 9px 14px → 8px 12px,
+  `gap` 7 → 6px. Cible tactile ≈ 100-115 × ~33px (large, confortable).
+- `.pencil` (✎) : 12 → 15px pour garder l'affordance « cliquable pour
+  éditer » bien visible malgré le bouton plus compact.
+
 ### 7ter. Espacement des sliders de critères + bouton « Écouter » — 2026-09-08
 - Écart vertical entre Performance / Texte / Production porté de 10px à 22px
   (`.criteria-breakdown`) pour limiter les touchers du mauvais slider au
