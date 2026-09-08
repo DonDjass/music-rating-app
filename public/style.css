@@ -8,10 +8,8 @@
   --gold-pale: #f6e7ab;
   --blue-fill: #6366d6;
   --track-dark: #2a2a2e;
-  --mini-fill: #e7e7e7;
   --mini-track: #3a3a3a;
-  --readonly-fill: #d2d2d2;
-  --readonly-track: #33322e;
+  --slider-grey: #9a9a9a;
   --btn-grey: #d9d9d9;
   --btn-pink: #f3a9ad;
   --btn-green: #57c98d;
@@ -481,7 +479,7 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 
@@ -492,11 +490,13 @@ body {
   border: none;
   color: #171412;
   font-weight: 800;
-  font-size: 13px;
-  padding: 11px 14px;
+  font-size: 12px;
+  padding: 10px 10px;
   border-radius: 999px;
   cursor: default;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .like-btn {
@@ -705,40 +705,17 @@ body {
   left: calc(100% - 8px);
 }
 
-/* Slider "note par critères" : plus de curseur, la barre remplit donc de
-   bord à bord (0%-100%) — l'échelle doit suivre la même référence. */
-.slider-ticks.flush span:nth-child(1) {
-  left: 0;
-}
-
-.slider-ticks.flush span:nth-child(2) {
-  left: 20%;
-}
-
-.slider-ticks.flush span:nth-child(3) {
-  left: 40%;
-}
-
-.slider-ticks.flush span:nth-child(4) {
-  left: 60%;
-}
-
-.slider-ticks.flush span:nth-child(5) {
-  left: 80%;
-}
-
-.slider-ticks.flush span:nth-child(6) {
-  left: 100%;
-}
-
-/* Native range styling, shared base */
+/* Native range styling.
+   PAS de `height` sur `input[type="range"]` : ce sélecteur est plus
+   spécifique que `.rating-slider` / `.mini-slider` et écraserait leur
+   épaisseur. L'épaisseur de la barre est portée par ces classes seules.
+   NOTE AU FEELING + synthèse = 8px ; les 3 critères = 4px. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--fill, var(--blue-fill)) var(--pct, 0%), var(--track, var(--track-dark)) var(--pct, 0%));
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--fill, var(--slider-grey)) var(--pct, 0%), var(--track, var(--track-dark)) var(--pct, 0%));
   cursor: pointer;
 }
 
@@ -754,7 +731,7 @@ input[type="range"]::-webkit-slider-thumb {
   height: 16px;
   border-radius: 50%;
   background: #ffffff;
-  border: 3px solid var(--fill, var(--blue-fill));
+  border: 3px solid var(--fill, var(--slider-grey));
   margin-top: 0;
 }
 
@@ -764,47 +741,37 @@ input[type="range"]::-moz-range-thumb {
   height: 16px;
   border-radius: 50%;
   background: #ffffff;
-  border: 3px solid var(--fill, var(--blue-fill));
+  border: 3px solid var(--fill, var(--slider-grey));
 }
 
 input[type="range"]::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
   background: transparent;
 }
 
+/* Charte des sliders selon l'état édition / non-édition :
+   - non édité  : barre grise + curseur blanc bordé de gris
+   - en édition : barre violette + curseur blanc bordé de violet
+   La couleur (barre + bordure du curseur) est portée par --fill. */
 .rating-slider {
-  --fill: var(--blue-fill);
+  --fill: var(--slider-grey);
   --track: var(--track-dark);
+  height: 8px;
 }
 
-/* Non interactif par nature (BR-00037) : jamais de curseur rond, juste une
-   barre de progression terne, même en édition — pour ne pas ressembler aux
-   vrais sliders manipulables. */
-.readonly-slider {
-  --fill: var(--readonly-fill);
-  --track: var(--readonly-track);
-  cursor: default;
-}
-
-.readonly-slider::-webkit-slider-thumb {
-  width: 0;
-  height: 0;
-  border: none;
-  background: transparent;
-}
-
-.readonly-slider::-moz-range-thumb {
-  width: 0;
-  height: 0;
-  border: none;
-  background: transparent;
+.rating-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 3px;
 }
 
 .mini-slider {
-  --fill: var(--mini-fill);
+  --fill: var(--slider-grey);
   --track: var(--mini-track);
-  height: 3px;
+  height: 4px;
+}
+
+.mini-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
 }
 
 .mini-slider::-webkit-slider-thumb {
@@ -813,13 +780,42 @@ input[type="range"]::-moz-range-track {
   border-width: 2px;
 }
 
+.mini-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+}
+
+/* En édition, les sliders manipulables passent au violet. */
+#feeling-block.editing #feeling-slider,
+#criteria-block.editing .mini-slider {
+  --fill: var(--blue-fill);
+}
+
+/* Critère pas encore renseigné (mode édition) : reste gris et estompé pour
+   bien montrer qu'il ne compte pas dans la moyenne (sa valeur affiche déjà
+   « — »). Il passe au violet dès qu'on le règle. */
+#criteria-block.editing .mini-slider.unset {
+  --fill: var(--slider-grey);
+  opacity: 0.35;
+}
+
+/* Barre de synthèse « note par critères » : TOUJOURS grise, quel que soit
+   l'état — elle n'est jamais modifiable directement (BR-00037). Curseur
+   visible mais gris pour le signifier. */
+.readonly-slider {
+  --fill: var(--slider-grey);
+  --track: var(--track-dark);
+  cursor: default;
+}
+
 /* --- Criteria breakdown --- */
 
 .criteria-breakdown {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 22px;
+  margin-top: 16px;
 }
 
 .criteria-line {

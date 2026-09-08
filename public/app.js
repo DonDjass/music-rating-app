@@ -227,6 +227,12 @@ function renderCriteria() {
   texteValueEl.textContent = formatNum(source.texte);
   productionValueEl.textContent = formatNum(source.production);
 
+  // Marque visuellement les critères pas encore renseignés en mode édition :
+  // ils n'entrent PAS dans la moyenne (cf. averageOfSetCriteria).
+  performanceSlider.classList.toggle("unset", isEditing && criteriaDraft.performance == null);
+  texteSlider.classList.toggle("unset", isEditing && criteriaDraft.texte == null);
+  productionSlider.classList.toggle("unset", isEditing && criteriaDraft.production == null);
+
   if (!isEditing) {
     setSlider(performanceSlider, track.criteria.performance ?? 0);
     setSlider(texteSlider, track.criteria.texte ?? 0);

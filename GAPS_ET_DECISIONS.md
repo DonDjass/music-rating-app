@@ -380,6 +380,45 @@ la moyenne des seuls critères renseignés (`averageOfSetCriteria` côté front,
 ST-00044** ("les trois critères ont été renseignés" avant l'enregistrement) :
 changement de spec proposé dans `SPEC_UPDATES_PROPOSEES.md`, à répercuter dans
 le fichier Excel source. Reste bloqué : enregistrer zéro critère.
+**VÉRIFIÉ (2026-09-08)** : le calcul côté interface exclut bien les critères
+`null` (test unitaire de `averageOfSetCriteria` : 1 critère à 8 → 8,0, pas
+8/3). Ajout d'un repère visuel : en édition, un critère non encore réglé est
+estompé (classe `.mini-slider.unset`) et sa valeur affiche « — », pour qu'on
+voie qu'il ne compte pas (utile aussi contre les touchers accidentels sur
+mobile — cf. §espacement des critères ci-dessous).
+
+### 7bis. Charte de couleur des sliders selon l'état édition — 2026-09-08
+Demande explicite de l'utilisateur.
+- **NOTE AU FEELING** et **3 critères (Performance/Texte/Production)** :
+  hors édition → barre grise + curseur blanc bordé de gris ; en édition →
+  barre violette + curseur bordé de violet. Porté par la variable CSS
+  `--fill`, basculée par `#feeling-block.editing` / `#criteria-block.editing`.
+- **Barre de synthèse « note par critères »** (slider du haut, résultat
+  calculé) : **toujours grise**, quel que soit l'état — pour signifier
+  qu'elle n'est jamais modifiable directement (BR-00037).
+- **Changement vs décision antérieure (§GD-00002-10)** : cette barre de
+  synthèse avait été rendue **sans curseur** pour la distinguer. L'utilisateur
+  demande maintenant un **curseur visible mais gris** ; c'est la couleur (et
+  non l'absence de curseur) qui porte désormais le « non manipulable ».
+  Les repères d'échelle repassent donc en positionnement normal (le curseur
+  de 16px est de retour), la classe `.slider-ticks.flush` est supprimée.
+
+### 7ter. Espacement des sliders de critères + bouton « Écouter » — 2026-09-08
+- Écart vertical entre Performance / Texte / Production porté de 10px à 22px
+  (`.criteria-breakdown`) pour limiter les touchers du mauvais slider au
+  doigt sur mobile.
+- Épaisseur des barres : NOTE AU FEELING + synthèse à **8px**, les 3 critères
+  à **4px** — pour bien distinguer les deux niveaux.
+  **Piège corrigé au passage :** le sélecteur `input[type="range"]` (spécificité
+  0,0,1,1) est plus fort que `.rating-slider` / `.mini-slider` (0,0,1,0) ; tant
+  qu'il portait `height`, les épaisseurs par classe étaient ignorées (toutes
+  les barres restaient à 4px). `height` a été retiré du sélecteur de base et
+  n'est plus défini que sur les classes.
+- Bouton « ▶ Écouter le morceau » : débordait légèrement sur petit écran →
+  `font-size` 13→12px, `padding` horizontal 14→10px, `gap` de la barre
+  d'actions 10→8px, + `overflow:hidden;text-overflow:ellipsis` en filet de
+  sécurité. (Le bouton reste dans la colonne métadonnées à droite de la
+  pochette, comme la maquette.)
 
 ### 8. Méthode d'arrondi
 **Contexte :** CR-00039 et CR-00060 disent "arrondi au dixième" sans
