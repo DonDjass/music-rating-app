@@ -365,6 +365,65 @@ L'utilisateur signale que les toasts passaient **derrière la barre d'onglets**
   encore développées** (« Noter l'album », « Classic » album) — trop long /
   trop utile pour un toast fugace.
 
+### R10. Recherche — dédup album, filtre singles, résilience par catégorie — 2026-09-09
+Demandé par l'utilisateur.
+- **Dédup par release-group** (`searchReleases`) : une seule entrée par
+  album quel que soit le nombre d'éditions (FR/US, rééditions…). `limit`
+  MusicBrainz passée de 10 à 25 pour garder une liste fournie après
+  traitement ; on retient les 12 premiers groupes (ordre de pertinence
+  MusicBrainz conservé). Chaque entrée garde un **mbid de release** (pas de
+  release-group) car `/api/album-tracks` fait un *lookup* de release. Date
+  complétée depuis une autre édition si l'entrée retenue n'en a pas.
+- **Filtre des singles** : `release-group.primary-type === "Single"` exclu
+  de l'onglet Albums. **Tout le reste est gardé** (Album, EP, compilation,
+  live, `primary-type` absent…). Les non-albums restants sont étiquetés
+  discrètement dans le méta du résultat (« … — EP »).
+- **Résilience par catégorie** (`handleSearch`) : les 3 recherches
+  (recording / release / artist) tournent toujours en séquence mais chacune
+  est isolée. Une catégorie en échec renvoie `<clé> = null` +
+  `<clé>Error = "Indisponible pour le moment. Réessaie."` ; les autres
+  passent quand même. Fini le 502 global. Côté front : message ambre
+  discret dans la liste de la catégorie en échec + petite pastille ambre
+  sur son onglet (`.category-tab.has-error`). `lastSearchErrors` réinitialisé
+  si l'appel au serveur lui-même échoue.
+
+### R11. Cache-Control sur les fichiers statiques — 2026-09-09
+Le serveur n'envoyait aucun en-tête de cache → le téléphone gardait une
+vieille `style.css` (des correctifs semblaient « revenir en arrière », ex.
+en-tête album réapparu sur la vue artiste). `serveStatic` renvoie maintenant
+`Cache-Control: no-store, must-revalidate`. Dev local uniquement.
+
+### R12. Vue artiste enrichie — 2026-09-09
+Demandé par l'utilisateur : même pattern visuel que les fiches morceau/album.
+Nouvelle section `#artist-view` (l'ancien drill-down artiste = simple liste de
+morceaux MusicBrainz — est **supprimé**, ainsi que `getArtistTracks` /
+`/api/artist-tracks`). Nouvel endpoint `GET /api/artist?mbid=` (`getArtistPage`).
+- **Header** : pochette placeholder (comme la fiche morceau, cf. R4), nom,
+  genres/tags MusicBrainz (`inc=genres+tags`, top 3 par `count`, genres
+  prioritaires sur tags), cœur « J'aime » persisté (ligne `ratings` keyée sur
+  le mbid artiste, comme le « J'aime » album — n'apparaît pas dans « Mes
+  notations »).
+- **MA NOTATION** : même bloc 4 notes que l'album. « Notation morceaux » =
+  moyenne des NOTE GLOBALE de **tous** les morceaux notés de l'artiste (tous
+  albums confondus). Feeling / critères artiste = placeholders « — ». Globale
+  = moyenne des disponibles (= notation morceaux aujourd'hui). Tooltips
+  adaptés au contexte artiste. Toggle « Classic » décoratif (comme l'album).
+- **Discographie** : `release-group?artist=<mbid>&limit=100`, Single exclu
+  (comme R10), tri **récent → ancien** par `first-release-date`. Note par
+  album = moyenne des NOTE GLOBALE des morceaux notés **dont le champ `album`
+  (nom, faute de mbid en base) correspond au titre du release-group**
+  (`COLLATE NOCASE`) — sinon « — ». Un clic ouvre la tracklist :
+  `/api/album-tracks?rg=<releaseGroupMbid>` résout le groupe en une release
+  représentative (`releaseFromGroup`).
+- **Meilleurs titres** : `ratings` où `artist` (nom, `COLLATE NOCASE`) =
+  l'artiste et `global_rating IS NOT NULL`, triés note décroissante. Aucune
+  ligne « — ». Vide → « Pas encore de morceau noté pour cet artiste ».
+- **Limites connues** : match par **nom** (artiste et album) tant que la
+  migration `entity_type` / mbid n'est pas faite → collisions possibles,
+  titres d'album non strictement identiques ratés. La discographie inclut
+  live / compilations / remixes (seul « Single » est filtré) → liste parfois
+  longue ; filtrer les `secondary-types` serait une option.
+
 ---
 
 ## GD-00002 — Écran de notation d'un morceau

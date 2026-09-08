@@ -48,14 +48,25 @@ body {
 #search-view,
 #my-ratings-view,
 #drilldown-view,
+#artist-view,
 #home-view,
 #settings-view {
   padding: 20px 20px 28px;
 }
 
-/* Repère pour positionner la pop-up album en absolu (sans décaler le reste). */
-#drilldown-view {
+/* Repère pour positionner les pop-ups (album / artiste) en absolu. */
+#drilldown-view,
+#artist-view {
   position: relative;
+}
+
+.artist-section-title {
+  margin: 26px 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gold);
 }
 
 .placeholder-msg {
@@ -93,11 +104,27 @@ body {
   border-bottom-color: var(--gold);
 }
 
+/* Pastille discrète quand la recherche de cette catégorie a échoué. */
+.category-tab.has-error::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d9a441;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
 .search-empty {
   list-style: none;
   color: var(--grey);
   font-size: 13px;
   padding: 6px 2px;
+}
+
+.search-empty.search-error {
+  color: #d9a441;
 }
 
 .drilldown-back {

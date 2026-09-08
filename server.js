@@ -118,19 +118,47 @@ async function searchRecordings(query) {
 }
 
 async function searchReleases(query) {
+  // limit élevée : on dé-doublonne et on filtre ensuite, il faut de la marge
+  // pour ne pas se retrouver avec 2-3 albums après traitement.
   const url = `https://musicbrainz.org/ws/2/release/?query=${encodeURIComponent(
     query
-  )}&fmt=json&limit=10`;
+  )}&fmt=json&limit=25`;
 
   const res = await fetchWithRetry(url, { headers: MB_HEADERS });
   const data = await res.json();
 
-  return (data.releases || []).map((rel) => ({
-    mbid: rel.id,
-    title: rel.title,
-    artist: rel["artist-credit"]?.[0]?.name || "Artiste inconnu",
-    date: rel.date || null,
-  }));
+  // 1 entrée par release-group : les éditions multiples d'un même album
+  // (FR/US, rééditions…) sont fusionnées. Ordre de pertinence MusicBrainz
+  // conservé (Map = ordre d'insertion). 2. Les "Single" sont exclus ;
+  // Album, EP, compilation, live… sont gardés.
+  const byGroup = new Map();
+  for (const rel of data.releases || []) {
+    const rg = rel["release-group"] || {};
+    const primaryType = rg["primary-type"] || null;
+
+    if (primaryType === "Single") continue;
+
+    const groupKey = rg.id || rel.id;
+    if (byGroup.has(groupKey)) {
+      const existing = byGroup.get(groupKey);
+      // Complète la date si l'entrée retenue n'en avait pas.
+      if (!existing.date && rel.date) existing.date = rel.date;
+      continue;
+    }
+
+    byGroup.set(groupKey, {
+      mbid: rel.id, // release mbid — nécessaire pour /api/album-tracks
+      releaseGroupMbid: rg.id || null,
+      title: rg.title || rel.title,
+      artist: rel["artist-credit"]?.[0]?.name || "Artiste inconnu",
+      date: rel.date || null,
+      primaryType,
+    });
+
+    if (byGroup.size >= 12) break;
+  }
+
+  return [...byGroup.values()];
 }
 
 async function searchArtists(query) {
@@ -180,24 +208,85 @@ async function getReleaseTracks(releaseMbid) {
   return { title: album, artist, date, tracks };
 }
 
-async function getArtistTracks(artistMbid, artistName) {
-  const url = `https://musicbrainz.org/ws/2/recording?artist=${artistMbid}&fmt=json&limit=25`;
+// Résout un release-group MusicBrainz en une release représentative
+// (nécessaire car /api/album-tracks travaille sur une release, pas un groupe).
+async function releaseFromGroup(rgMbid) {
+  const url = `https://musicbrainz.org/ws/2/release?release-group=${rgMbid}&fmt=json&limit=1`;
   const res = await fetchWithRetry(url, { headers: MB_HEADERS });
   const data = await res.json();
+  return data.releases?.[0]?.id || null;
+}
 
-  // La recherche "browse" par artiste ne renvoie pas l'artiste ni les
-  // releases par défaut (il faudrait un inc= supplémentaire) : on réutilise
-  // le nom déjà connu côté appelant plutôt que de faire un appel de plus.
-  const tracks = (data.recordings || []).map((rec) => ({
-    mbid: rec.id,
-    title: rec.title,
-    artist: artistName || "Artiste inconnu",
-    album: null,
-    date: rec["first-release-date"] || null,
-    durationMs: rec.length || null,
-  }));
+// --- Page artiste : détails + discographie + meilleurs titres notés ---
 
-  return { title: artistName || "Artiste", tracks };
+async function getArtistPage(mbid) {
+  // 1. Détails (nom + genres/tags)
+  const aRes = await fetchWithRetry(
+    `https://musicbrainz.org/ws/2/artist/${mbid}?inc=genres+tags&fmt=json`,
+    { headers: MB_HEADERS }
+  );
+  const a = await aRes.json();
+  const name = a.name || "Artiste inconnu";
+  const rawTags = (a.genres && a.genres.length ? a.genres : a.tags) || [];
+  const tags = rawTags
+    .slice()
+    .sort((x, y) => (y.count || 0) - (x.count || 0))
+    .slice(0, 3)
+    .map((t) => t.name);
+
+  await wait(400);
+
+  // 2. Discographie : release-groups (dé-doublonnés par nature), Single exclus.
+  const rgRes = await fetchWithRetry(
+    `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
+    { headers: MB_HEADERS }
+  );
+  const rgData = await rgRes.json();
+
+  // Notes locales par titre d'album (match sur le nom, faute de mbid en base).
+  const noteRows = db
+    .prepare(
+      `SELECT album, AVG(global_rating) AS note
+         FROM ratings
+        WHERE artist = ? COLLATE NOCASE AND global_rating IS NOT NULL
+        GROUP BY album COLLATE NOCASE`
+    )
+    .all(name);
+  const noteByAlbum = {};
+  for (const r of noteRows) noteByAlbum[(r.album || "").toLowerCase()] = round1(r.note);
+
+  const discography = (rgData["release-groups"] || [])
+    .filter((rg) => (rg["primary-type"] || null) !== "Single")
+    .map((rg) => ({
+      releaseGroupMbid: rg.id,
+      title: rg.title,
+      date: rg["first-release-date"] || null,
+      primaryType: rg["primary-type"] || null,
+      note: noteByAlbum[(rg.title || "").toLowerCase()] ?? null,
+    }))
+    .sort((x, y) => (y.date || "").localeCompare(x.date || "")); // récent -> ancien
+
+  // 3. Meilleurs titres = morceaux notés de cet artiste, du mieux noté au moins bien.
+  const topTracks = db
+    .prepare(
+      `SELECT * FROM ratings
+        WHERE artist = ? COLLATE NOCASE AND global_rating IS NOT NULL
+        ORDER BY global_rating DESC, created_at DESC`
+    )
+    .all(name)
+    .map(serializeRow);
+
+  // 4. "J'aime" l'artiste (ligne ratings keyée sur le mbid de l'artiste).
+  const likeRow = db.prepare(`SELECT is_liked FROM ratings WHERE mbid = ?`).get(mbid);
+
+  return {
+    mbid,
+    name,
+    tags,
+    isLiked: !!(likeRow && likeRow.is_liked),
+    discography,
+    topTracks,
+  };
 }
 
 // --- Récupère (ou crée) la ligne d'un morceau, identifié par son mbid ---
@@ -275,21 +364,30 @@ async function handleSearch(query, res) {
   const q = (query || "").trim();
   if (!q) return sendJson(res, 400, { error: "Requête de recherche vide." });
 
-  try {
-    // Séquentiel plutôt qu'en parallèle : MusicBrainz demande de rester
-    // autour d'1 requête/seconde, et 3 appels simultanés déclenchent des
-    // 503 (donc des retries avec backoff) bien plus souvent.
-    const tracks = await searchRecordings(q);
-    await wait(400);
-    const albums = await searchReleases(q);
-    await wait(400);
-    const artists = await searchArtists(q);
+  const result = {};
 
-    sendJson(res, 200, { tracks, albums, artists });
-  } catch (err) {
-    console.error(err);
-    sendJson(res, 502, { error: "Recherche MusicBrainz indisponible. Réessaie." });
+  // Chaque catégorie est indépendante : si l'une échoue (ex. 503 sur les
+  // releases), les deux autres sont quand même renvoyées, et la catégorie en
+  // échec porte un `<clé>Error` que le front affiche discrètement.
+  async function run(key, fn) {
+    try {
+      result[key] = await fn(q);
+    } catch (err) {
+      console.error(`Recherche "${key}" en échec :`, err.message);
+      result[key] = null;
+      result[`${key}Error`] = "Indisponible pour le moment. Réessaie.";
+    }
   }
+
+  // Séquentiel (MusicBrainz demande ~1 req/s ; 3 appels simultanés font
+  // grimper les 503).
+  await run("tracks", searchRecordings);
+  await wait(400);
+  await run("albums", searchReleases);
+  await wait(400);
+  await run("artists", searchArtists);
+
+  sendJson(res, 200, result);
 }
 
 // Historique des recherches : on enregistre la requête (dé-doublonnée et
@@ -340,10 +438,15 @@ async function handleResolveAlbum(title, artist, res) {
   }
 }
 
-async function handleAlbumTracks(mbid, res) {
-  if (!mbid) return sendJson(res, 400, { error: "mbid manquant." });
+// `mbid` = release, OU `rgMbid` = release-group (résolu en une release ; utile
+// pour la discographie d'un artiste qui liste des release-groups).
+async function handleAlbumTracks(mbid, rgMbid, res) {
   try {
-    const data = await getReleaseTracks(mbid);
+    let releaseMbid = mbid || null;
+    if (!releaseMbid && rgMbid) releaseMbid = await releaseFromGroup(rgMbid);
+    if (!releaseMbid) return sendJson(res, 400, { error: "mbid manquant." });
+
+    const data = await getReleaseTracks(releaseMbid);
 
     // Enrichit chaque morceau avec sa NOTE GLOBALE locale (null si non noté),
     // et indique si l'album lui-même est "aimé" (ligne ratings keyée sur le
@@ -362,8 +465,8 @@ async function handleAlbumTracks(mbid, res) {
       globalRating: ratingByMbid[t.mbid] ?? null,
     }));
 
-    const albumRow = db.prepare(`SELECT is_liked FROM ratings WHERE mbid = ?`).get(mbid);
-    data.releaseMbid = mbid;
+    const albumRow = db.prepare(`SELECT is_liked FROM ratings WHERE mbid = ?`).get(releaseMbid);
+    data.releaseMbid = releaseMbid;
     data.isLiked = !!(albumRow && albumRow.is_liked);
 
     sendJson(res, 200, data);
@@ -373,10 +476,10 @@ async function handleAlbumTracks(mbid, res) {
   }
 }
 
-async function handleArtistTracks(mbid, artistName, res) {
+async function handleArtistPage(mbid, res) {
   if (!mbid) return sendJson(res, 400, { error: "mbid manquant." });
   try {
-    sendJson(res, 200, await getArtistTracks(mbid, artistName));
+    sendJson(res, 200, await getArtistPage(mbid));
   } catch (err) {
     console.error(err);
     sendJson(res, 502, { error: "MusicBrainz indisponible. Réessaie." });
@@ -564,7 +667,13 @@ function serveStatic(pathname, res) {
       return res.end("Introuvable");
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+    // Dev local : on ne veut jamais servir un vieux HTML/CSS/JS en cache
+    // (le téléphone rechargeait une ancienne feuille de style et des
+    // correctifs semblaient "revenir en arrière").
+    res.writeHead(200, {
+      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+      "Cache-Control": "no-store, must-revalidate",
+    });
     res.end(content);
   });
 }
@@ -601,15 +710,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/api/album-tracks" && req.method === "GET") {
-      return await handleAlbumTracks(url.searchParams.get("mbid"), res);
-    }
-
-    if (pathname === "/api/artist-tracks" && req.method === "GET") {
-      return await handleArtistTracks(
+      return await handleAlbumTracks(
         url.searchParams.get("mbid"),
-        url.searchParams.get("name"),
+        url.searchParams.get("rg"),
         res
       );
+    }
+
+    if (pathname === "/api/artist" && req.method === "GET") {
+      return await handleArtistPage(url.searchParams.get("mbid"), res);
     }
 
     const trackMatch = pathname.match(/^\/api\/tracks\/([^/]+)$/);

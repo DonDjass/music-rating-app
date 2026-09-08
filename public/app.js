@@ -56,10 +56,27 @@ const albumNoteGlobal = el("album-note-global");
 const albumPopup = el("album-popup");
 const albumPopupText = el("album-popup-text");
 
+const artistView = el("artist-view");
+const artistNameEl = el("artist-name");
+const artistTagsEl = el("artist-tags");
+const artistLikeBtn = el("artist-like-btn");
+const artistStatus = el("artist-status");
+const artistNotation = el("artist-notation");
+const artistNoteTracks = el("artist-note-tracks");
+const artistNoteFeeling = el("artist-note-feeling");
+const artistNoteCriteria = el("artist-note-criteria");
+const artistNoteGlobal = el("artist-note-global");
+const artistPopup = el("artist-popup");
+const artistPopupText = el("artist-popup-text");
+const artistDiscographyEl = el("artist-discography");
+const artistTopTracksEl = el("artist-top-tracks");
+const backFromArtistBtn = el("back-from-artist");
+
 // Album actuellement ouvert dans le drill-down (pour "J'aime" et "Noter les
 // morceaux"). Réinitialisé à chaque openAlbum / openArtist.
 let currentAlbum = null; // { mbid, title, artist, year }
 let currentAlbumTracks = []; // liste ordonnée pour "Noter les morceaux"
+let currentArtist = null; // { mbid, name } — pour "J'aime" l'artiste
 
 const myRatingsView = el("my-ratings-view");
 const myRatingsStatus = el("my-ratings-status");
@@ -143,27 +160,32 @@ function showToast(message) {
   }, 2600);
 }
 
-// Pop-up album : explication d'une note / action pas encore développée.
-// Positionnée en absolu juste sous la ligne "MA NOTATION" (ne décale rien).
-// Fondu à l'affichage/disparition ; se ferme à 10 s, via le "×", ou en
-// changeant d'écran.
-function showAlbumPopup(message) {
-  albumPopupText.textContent = message;
-  // Ancrée sous la ligne notation, alignée sur sa largeur.
-  albumPopup.style.top = `${albumNotation.offsetTop + albumNotation.offsetHeight + 8}px`;
-  albumPopup.style.left = `${albumNotation.offsetLeft}px`;
-  albumPopup.style.width = `${albumNotation.offsetWidth}px`;
-  albumPopup.classList.add("visible");
-  clearTimeout(showAlbumPopup._t);
-  showAlbumPopup._t = setTimeout(hideAlbumPopup, 10000);
+// Pop-up d'explication (album / artiste) : positionnée en absolu juste sous
+// la ligne "MA NOTATION" (ne décale rien). Fondu à l'affichage/disparition ;
+// se ferme à 10 s, via le "×", ou en changeant d'écran.
+function makePopup(popupEl, textEl, anchorEl) {
+  let timer;
+  function show(message) {
+    textEl.textContent = message;
+    popupEl.style.top = `${anchorEl.offsetTop + anchorEl.offsetHeight + 8}px`;
+    popupEl.style.left = `${anchorEl.offsetLeft}px`;
+    popupEl.style.width = `${anchorEl.offsetWidth}px`;
+    popupEl.classList.add("visible");
+    clearTimeout(timer);
+    timer = setTimeout(hide, 10000);
+  }
+  function hide() {
+    popupEl.classList.remove("visible");
+    clearTimeout(timer);
+  }
+  popupEl.querySelector(".album-popup-close").addEventListener("click", hide);
+  return { show, hide };
 }
 
-function hideAlbumPopup() {
-  albumPopup.classList.remove("visible");
-  clearTimeout(showAlbumPopup._t);
-}
-
-el("album-popup-close").addEventListener("click", hideAlbumPopup);
+const albumPopupCtl = makePopup(albumPopup, albumPopupText, albumNotation);
+const artistPopupCtl = makePopup(artistPopup, artistPopupText, artistNotation);
+const showAlbumPopup = albumPopupCtl.show;
+const hideAlbumPopup = albumPopupCtl.hide;
 
 // --- Rendu ---
 
@@ -515,7 +537,7 @@ rateTracksBtn.addEventListener("click", () => {
 
 // --- Recherche ---
 
-const ALL_VIEWS = [homeView, searchView, drilldownView, myRatingsView, settingsView, trackView];
+const ALL_VIEWS = [homeView, searchView, drilldownView, artistView, myRatingsView, settingsView, trackView];
 
 function showOnly(view) {
   for (const v of ALL_VIEWS) v.hidden = v !== view;
@@ -560,11 +582,17 @@ function showMyRatingsView() {
 }
 
 function showDrilldownView() {
-  // Le drill-down (tracklist d'un album/artiste) n'est accessible que
-  // depuis la recherche : on reste dans la section "Recherche".
+  // Le drill-down (tracklist d'un album) n'est accessible que depuis la
+  // recherche : on reste dans la section "Recherche".
   currentSection = "search";
   updateTabBar();
   showOnly(drilldownView);
+}
+
+function showArtistView() {
+  currentSection = "search";
+  updateTabBar();
+  showOnly(artistView);
 }
 
 tabHome.addEventListener("click", showHomeView);
@@ -662,6 +690,8 @@ function createTracklistRow(r, context) {
 function createAlbumResultItem(a) {
   const parts = [a.artist];
   if (a.date) parts.push(a.date.slice(0, 4));
+  // Signale les non-albums qui restent dans l'onglet (EP, compilation, live…).
+  if (a.primaryType && a.primaryType !== "Album") parts.push(a.primaryType);
   return buildResultItem(a.title, parts.join(" — "), () => openAlbum(a));
 }
 
@@ -670,11 +700,11 @@ function createArtistResultItem(a) {
   return buildResultItem(a.name, meta, () => openArtist(a));
 }
 
-function renderCategory(container, items, createItemFn, emptyMessage) {
+function renderCategory(container, items, createItemFn, emptyMessage, isError = false) {
   container.innerHTML = "";
   if (items.length === 0) {
     const li = document.createElement("li");
-    li.className = "search-empty";
+    li.className = isError ? "search-empty search-error" : "search-empty";
     li.textContent = emptyMessage;
     container.appendChild(li);
     return;
@@ -689,6 +719,7 @@ function renderCategory(container, items, createItemFn, emptyMessage) {
 // recherche.
 let currentCategory = "tracks";
 let lastSearchData = { tracks: [], albums: [], artists: [] };
+let lastSearchErrors = { tracks: null, albums: null, artists: null };
 
 const CATEGORY_CONFIG = {
   tracks: { create: () => createTrackResultItem, empty: "Aucun morceau trouvé." },
@@ -696,9 +727,16 @@ const CATEGORY_CONFIG = {
   artists: { create: () => createArtistResultItem, empty: "Aucun artiste trouvé." },
 };
 
+function updateCategoryTabErrors() {
+  catTracks.classList.toggle("has-error", !!lastSearchErrors.tracks);
+  catAlbums.classList.toggle("has-error", !!lastSearchErrors.albums);
+  catArtists.classList.toggle("has-error", !!lastSearchErrors.artists);
+}
+
 function renderCurrentCategory() {
   const { create, empty } = CATEGORY_CONFIG[currentCategory];
-  renderCategory(resultsList, lastSearchData[currentCategory], create(), empty);
+  const err = lastSearchErrors[currentCategory];
+  renderCategory(resultsList, lastSearchData[currentCategory], create(), err || empty, !!err);
 }
 
 function setCategory(category) {
@@ -724,12 +762,24 @@ async function runSearch() {
 
   try {
     const data = await api(`/api/search?q=${encodeURIComponent(q)}`, "GET");
-    lastSearchData = { tracks: data.tracks || [], albums: data.albums || [], artists: data.artists || [] };
+    lastSearchData = {
+      tracks: data.tracks || [],
+      albums: data.albums || [],
+      artists: data.artists || [],
+    };
+    lastSearchErrors = {
+      tracks: data.tracksError || null,
+      albums: data.albumsError || null,
+      artists: data.artistsError || null,
+    };
     setSearchStatus(null);
+    updateCategoryTabErrors();
     renderCurrentCategory();
     // Best-effort : l'historique ne doit pas bloquer l'affichage des résultats.
     api("/api/search-history", "POST", { query: q }).catch(() => {});
   } catch (err) {
+    lastSearchErrors = { tracks: null, albums: null, artists: null };
+    updateCategoryTabErrors();
     setSearchStatus("Recherche indisponible. Réessaie.");
   }
 }
@@ -879,14 +929,23 @@ async function openAlbum(album) {
   showDrilldownView();
 
   try {
-    const data = await api(`/api/album-tracks?mbid=${encodeURIComponent(album.mbid)}`, "GET");
+    // Ouverture par release (recherche / fiche) ou par release-group (discographie artiste).
+    const qs = album.mbid
+      ? `mbid=${encodeURIComponent(album.mbid)}`
+      : `rg=${encodeURIComponent(album.releaseGroupMbid)}`;
+    const data = await api(`/api/album-tracks?${qs}`, "GET");
     const tracks = data.tracks || [];
     setDrilldownStatus(null);
 
     const artistName = data.artist || album.artist || "";
     const year = (data.date || album.date || "").slice(0, 4);
 
-    currentAlbum = { mbid: album.mbid, title: data.title || album.title || "", artist: artistName, year };
+    currentAlbum = {
+      mbid: data.releaseMbid || album.mbid,
+      title: data.title || album.title || "",
+      artist: artistName,
+      year,
+    };
     currentAlbumTracks = tracks;
 
     albumTitleEl.textContent = currentAlbum.title || "—";
@@ -916,34 +975,175 @@ async function openAlbum(album) {
   }
 }
 
+// --- Vue artiste (en-tête + MA NOTATION + discographie + meilleurs titres) ---
+
+const ARTIST_NOTE_HELP = {
+  "artist-note-tracks": "Moyenne des notes de tous les morceaux notés de cet artiste, tous albums confondus.",
+  "artist-note-feeling": "Ta note instinctive pour cet artiste dans son ensemble — bientôt disponible.",
+  "artist-note-criteria": "Ta note calculée sur les critères de l'artiste — bientôt disponible.",
+  "artist-note-global": "Moyenne de tes notes disponibles pour cet artiste (morceaux, feeling, critères).",
+};
+for (const [id, msg] of Object.entries(ARTIST_NOTE_HELP)) {
+  el(id).addEventListener("click", () => artistPopupCtl.show(msg));
+}
+el("artist-classic-btn").addEventListener("click", () => artistPopupCtl.show("Bientôt disponible."));
+
+function renderArtistLike(isLiked) {
+  artistLikeBtn.classList.toggle("liked", !!isLiked);
+  artistLikeBtn.textContent = isLiked ? "♥" : "♡";
+}
+
+function renderArtistNotation(topTracks) {
+  // Notation morceaux = moyenne des NOTE GLOBALE des morceaux notés de l'artiste.
+  const notes = computeAlbumNotes(topTracks); // même logique que l'album
+  setAlbumNote(artistNoteTracks, notes.tracks);
+  setAlbumNote(artistNoteFeeling, notes.feeling);
+  setAlbumNote(artistNoteCriteria, notes.criteria);
+  setAlbumNote(artistNoteGlobal, notes.global);
+}
+
+// Ligne de discographie : titre de l'album, année (+ type si ≠ Album), note.
+function createDiscographyRow(album) {
+  const li = document.createElement("li");
+  li.className = "tracklist-row";
+
+  const titleEl = document.createElement("span");
+  titleEl.className = "tracklist-title";
+  titleEl.textContent = album.title;
+  li.appendChild(titleEl);
+
+  const metaEl = document.createElement("span");
+  metaEl.className = "tracklist-duration";
+  const metaParts = [];
+  if (album.date) metaParts.push(album.date.slice(0, 4));
+  if (album.primaryType && album.primaryType !== "Album") metaParts.push(album.primaryType);
+  metaEl.textContent = metaParts.join(" · ");
+  li.appendChild(metaEl);
+
+  const ratingEl = document.createElement("span");
+  ratingEl.className = "tracklist-rating";
+  ratingEl.textContent = formatNum(album.note);
+  li.appendChild(ratingEl);
+
+  li.addEventListener("click", () =>
+    openAlbum({
+      releaseGroupMbid: album.releaseGroupMbid,
+      title: album.title,
+      artist: currentArtist ? currentArtist.name : "",
+      date: album.date,
+    })
+  );
+  return li;
+}
+
+// Ligne "meilleurs titres" : titre du morceau, album, NOTE GLOBALE (toujours renseignée).
+function createArtistTopTrackRow(r) {
+  const li = document.createElement("li");
+  li.className = "tracklist-row";
+
+  const titleEl = document.createElement("span");
+  titleEl.className = "tracklist-title";
+  titleEl.textContent = r.title;
+  li.appendChild(titleEl);
+
+  const metaEl = document.createElement("span");
+  metaEl.className = "tracklist-duration";
+  metaEl.textContent = r.albumTitle || "";
+  li.appendChild(metaEl);
+
+  const ratingEl = document.createElement("span");
+  ratingEl.className = "tracklist-rating";
+  ratingEl.textContent = formatNum(r.globalRating);
+  li.appendChild(ratingEl);
+
+  li.addEventListener("click", async () => {
+    setArtistStatus("Chargement…");
+    try {
+      const context = await buildAlbumContextFor(r);
+      await loadTrack(r.mbid, r, context);
+      setArtistStatus(null);
+    } catch (err) {
+      setArtistStatus("Impossible de charger ce morceau. Réessaie.");
+    }
+  });
+  return li;
+}
+
+function setArtistStatus(message) {
+  artistStatus.hidden = !message;
+  artistStatus.textContent = message || "";
+}
+
 async function openArtist(artist) {
-  // Mode "artiste" : titre simple, pas d'en-tête album.
-  albumHeader.hidden = true;
-  albumActions.hidden = true;
-  albumNotation.hidden = true;
-  hideAlbumPopup();
+  currentArtist = { mbid: artist.mbid, name: artist.name };
   currentAlbum = null;
   currentAlbumTracks = [];
-  drilldownTitle.hidden = false;
-  drilldownTitle.className = "search-title";
-  drilldownTitle.textContent = artist.name;
-  drilldownResults.className = "search-results";
-  drilldownResults.innerHTML = "";
-  setDrilldownStatus("Chargement…");
-  showDrilldownView();
+  artistPopupCtl.hide();
+
+  artistNameEl.textContent = artist.name;
+  artistTagsEl.hidden = true;
+  artistTagsEl.textContent = "";
+  renderArtistLike(false);
+  renderArtistNotation([]);
+  artistDiscographyEl.innerHTML = "";
+  artistTopTracksEl.innerHTML = "";
+  setArtistStatus("Chargement…");
+  showArtistView();
 
   try {
-    const data = await api(
-      `/api/artist-tracks?mbid=${encodeURIComponent(artist.mbid)}&name=${encodeURIComponent(artist.name)}`,
-      "GET"
-    );
-    setDrilldownStatus(null);
-    renderCategory(drilldownResults, data.tracks || [], createTrackResultItem, "Aucun morceau trouvé pour cet artiste.");
+    const data = await api(`/api/artist?mbid=${encodeURIComponent(artist.mbid)}`, "GET");
+    setArtistStatus(null);
+
+    currentArtist = { mbid: data.mbid, name: data.name };
+    artistNameEl.textContent = data.name;
+    artistTagsEl.textContent = (data.tags || []).join(" · ");
+    artistTagsEl.hidden = !(data.tags && data.tags.length);
+    renderArtistLike(data.isLiked);
+
+    const topTracks = data.topTracks || [];
+    renderArtistNotation(topTracks);
+
+    // Discographie
+    const discography = data.discography || [];
+    if (discography.length === 0) {
+      const li = document.createElement("li");
+      li.className = "search-empty";
+      li.textContent = "Aucun album trouvé pour cet artiste.";
+      artistDiscographyEl.appendChild(li);
+    } else {
+      discography.forEach((a) => artistDiscographyEl.appendChild(createDiscographyRow(a)));
+    }
+
+    // Meilleurs titres (uniquement les morceaux notés)
+    if (topTracks.length === 0) {
+      const li = document.createElement("li");
+      li.className = "search-empty";
+      li.textContent = "Pas encore de morceau noté pour cet artiste.";
+      artistTopTracksEl.appendChild(li);
+    } else {
+      topTracks.forEach((r) => artistTopTracksEl.appendChild(createArtistTopTrackRow(r)));
+    }
   } catch (err) {
-    setDrilldownStatus("Impossible de charger cet artiste. Réessaie.");
+    setArtistStatus("Impossible de charger cet artiste. Réessaie.");
   }
 }
 
+artistLikeBtn.addEventListener("click", async () => {
+  if (!currentArtist) return;
+  const next = !artistLikeBtn.classList.contains("liked");
+  renderArtistLike(next); // optimiste
+  try {
+    await api(`/api/tracks/${encodeURIComponent(currentArtist.mbid)}/like`, "PUT", {
+      value: next,
+      meta: { title: currentArtist.name, artist: currentArtist.name, album: currentArtist.name },
+    });
+  } catch (err) {
+    renderArtistLike(!next);
+    showToast("Impossible de modifier « J'aime ».");
+  }
+});
+
+backFromArtistBtn.addEventListener("click", showSearchView);
 backFromDrilldownBtn.addEventListener("click", showSearchView);
 
 // Charge un morceau (le crée s'il n'existe pas encore) et bascule sur sa

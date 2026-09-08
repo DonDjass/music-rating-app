@@ -101,6 +101,49 @@
       <ul id="drilldown-results" class="search-results"></ul>
     </section>
 
+    <section id="artist-view" hidden>
+      <button id="back-from-artist" class="drilldown-back" type="button">← Retour aux résultats</button>
+
+      <header class="album-header" id="artist-header">
+        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="track-meta">
+          <h1 id="artist-name">—</h1>
+          <p class="tags" id="artist-tags" hidden></p>
+          <div class="header-actions">
+            <button class="like-btn" id="artist-like-btn" type="button" aria-label="J'aime">♡</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="album-notation" id="artist-notation">
+        <span class="album-notation-label">MA NOTATION</span>
+        <button class="album-note" id="artist-note-tracks" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note" id="artist-note-feeling" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note" id="artist-note-criteria" type="button">—/10</button>
+        <span class="album-note-sep">|</span>
+        <button class="album-note is-global" id="artist-note-global" type="button">—/10</button>
+        <button class="classic-toggle album-classic is-disabled" id="artist-classic-btn" type="button" aria-disabled="true" title="Bientôt disponible">
+          <span class="classic-word">Classic</span>
+          <span class="classic-star">☆</span>
+        </button>
+      </div>
+
+      <div id="artist-popup" class="album-popup">
+        <button class="album-popup-close" id="artist-popup-close" type="button" aria-label="Fermer">&times;</button>
+        <p class="album-popup-text" id="artist-popup-text"></p>
+      </div>
+
+      <p id="artist-status" class="search-status" hidden></p>
+
+      <h2 class="artist-section-title">Discographie</h2>
+      <ul id="artist-discography" class="tracklist"></ul>
+
+      <h2 class="artist-section-title">Meilleurs titres</h2>
+      <ul id="artist-top-tracks" class="tracklist"></ul>
+    </section>
+
     <section id="home-view" hidden>
       <h1 class="search-title">Accueil</h1>
       <p class="placeholder-msg">Bientôt disponible.</p>
