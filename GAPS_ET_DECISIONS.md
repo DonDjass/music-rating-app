@@ -60,10 +60,11 @@ sans confirmation :
 - **Seuil de déclenchement** : 60px de déplacement horizontal minimum, et
   le mouvement doit être nettement plus horizontal que vertical (pour ne
   pas confondre avec un scroll de la page).
-- **Non testé sur un vrai écran tactile** : je n'ai pas de navigateur dans
-  cette session, donc cette fonctionnalité n'a pu être vérifiée que par
-  relecture du code. À tester sur le téléphone (déjà configuré pour
-  accéder au serveur en local).
+- **Validé sur téléphone (2026-09-08)** : le swipe Précédent/Suivant et le
+  rendu de la barre d'onglets (fond gris foncé, liseré doré fin, icône +
+  libellé, onglets Accueil/Réglages) ont été confirmés OK par l'utilisateur
+  sur son écran tactile. Convention de sens (gauche = suivant) validée à
+  l'usage.
 
 ## Barre d'onglets "Mes notations / Recherche" en bas d'écran — RÉSOLU (2026-09-07)
 
