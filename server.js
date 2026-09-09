@@ -77,6 +77,25 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// --- File d'attente MusicBrainz : l'API demande ~1 req/s. Le front peut
+// lancer les 3 recherches en parallèle (affichage progressif) ; ce verrou
+// les fait partir une par une, avec un petit délai entre chacune. ---
+let mbQueue = Promise.resolve();
+const MB_GAP_MS = 350;
+
+function mbGated(task) {
+  const result = mbQueue.then(task, task);
+  mbQueue = result.then(
+    () => wait(MB_GAP_MS),
+    () => wait(MB_GAP_MS)
+  );
+  return result;
+}
+
+function mbFetch(url) {
+  return mbGated(() => fetchWithRetry(url, { headers: MB_HEADERS }));
+}
+
 // Backoff volontairement court : la recherche catégorisée enchaîne 3 appels
 // MusicBrainz, donc un backoff trop généreux (ex. 1,5s/3s/4,5s) peut faire
 // grimper une recherche à 30-40s+ en cas de 503 en chaîne. Ici, pire cas
@@ -84,7 +103,9 @@ function wait(ms) {
 // erreur claire plutôt que de faire attendre indéfiniment.
 async function fetchWithRetry(url, options = {}, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const res = await fetch(url, options);
+    // Timeout dur : une connexion MusicBrainz qui pend bloquerait toute la
+    // file d'attente `mbGated`.
+    const res = await fetch(url, { signal: AbortSignal.timeout(9000), ...options });
     if (res.ok) return res;
 
     if (res.status === 503 && attempt < retries) {
@@ -111,7 +132,7 @@ async function searchRecordings(query) {
     query
   )}&fmt=json&limit=10`;
 
-  const res = await fetchWithRetry(url, { headers: MB_HEADERS });
+  const res = await mbFetch(url);
   const data = await res.json();
 
   return (data.recordings || []).map(recordingToTrack);
@@ -124,7 +145,7 @@ async function searchReleases(query) {
     query
   )}&fmt=json&limit=25`;
 
-  const res = await fetchWithRetry(url, { headers: MB_HEADERS });
+  const res = await mbFetch(url);
   const data = await res.json();
 
   // 1 entrée par release-group : les éditions multiples d'un même album
@@ -166,7 +187,7 @@ async function searchArtists(query) {
     query
   )}&fmt=json&limit=10`;
 
-  const res = await fetchWithRetry(url, { headers: MB_HEADERS });
+  const res = await mbFetch(url);
   const data = await res.json();
 
   return (data.artists || []).map((artist) => ({
@@ -181,7 +202,7 @@ async function searchArtists(query) {
 
 async function getReleaseTracks(releaseMbid) {
   const url = `https://musicbrainz.org/ws/2/release/${releaseMbid}?inc=recordings+artists&fmt=json`;
-  const res = await fetchWithRetry(url, { headers: MB_HEADERS });
+  const res = await mbFetch(url);
   const data = await res.json();
 
   const artist = data["artist-credit"]?.[0]?.name || "Artiste inconnu";
@@ -212,7 +233,7 @@ async function getReleaseTracks(releaseMbid) {
 // (nécessaire car /api/album-tracks travaille sur une release, pas un groupe).
 async function releaseFromGroup(rgMbid) {
   const url = `https://musicbrainz.org/ws/2/release?release-group=${rgMbid}&fmt=json&limit=1`;
-  const res = await fetchWithRetry(url, { headers: MB_HEADERS });
+  const res = await mbFetch(url);
   const data = await res.json();
   return data.releases?.[0]?.id || null;
 }
@@ -221,10 +242,7 @@ async function releaseFromGroup(rgMbid) {
 
 async function getArtistPage(mbid) {
   // 1. Détails (nom + genres/tags)
-  const aRes = await fetchWithRetry(
-    `https://musicbrainz.org/ws/2/artist/${mbid}?inc=genres+tags&fmt=json`,
-    { headers: MB_HEADERS }
-  );
+  const aRes = await mbFetch(`https://musicbrainz.org/ws/2/artist/${mbid}?inc=genres+tags&fmt=json`);
   const a = await aRes.json();
   const name = a.name || "Artiste inconnu";
   const rawTags = (a.genres && a.genres.length ? a.genres : a.tags) || [];
@@ -237,10 +255,7 @@ async function getArtistPage(mbid) {
   await wait(400);
 
   // 2. Discographie : release-groups (dé-doublonnés par nature), Single exclus.
-  const rgRes = await fetchWithRetry(
-    `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
-    { headers: MB_HEADERS }
-  );
+  const rgRes = await mbFetch(`https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`);
   const rgData = await rgRes.json();
 
   // Notes locales par titre d'album (match sur le nom, faute de mbid en base).
@@ -360,34 +375,146 @@ function serializeRow(row) {
 
 // --- Handlers API ---
 
-async function handleSearch(query, res) {
+// Cache des recherches en mémoire (vie du process). Clé = "catégorie:requête".
+// Une requête déjà obtenue n'est pas re-demandée à MusicBrainz.
+const SEARCH_CACHE_TTL = 60 * 60 * 1000; // 1 h
+const SEARCH_CACHE_MAX = 300;
+const searchCache = new Map();
+
+const SEARCH_FN = {
+  tracks: searchRecordings,
+  albums: searchReleases,
+  artists: searchArtists,
+};
+
+// Une catégorie à la fois : le front lance les 3 en parallèle et affiche
+// chacune dès qu'elle répond. Chaque catégorie est indépendante (une en
+// échec renvoie `<clé>Error`, les autres passent). Le verrou `mbGated`
+// sérialise les appels MusicBrainz sous-jacents.
+async function handleSearchCategory(cat, query, res) {
+  const fn = SEARCH_FN[cat];
+  if (!fn) return sendJson(res, 404, { error: "Catégorie inconnue." });
+
   const q = (query || "").trim();
   if (!q) return sendJson(res, 400, { error: "Requête de recherche vide." });
 
-  const result = {};
+  const key = `${cat}:${q.toLowerCase()}`;
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.ts < SEARCH_CACHE_TTL) {
+    return sendJson(res, 200, { [cat]: hit.data, cached: true });
+  }
 
-  // Chaque catégorie est indépendante : si l'une échoue (ex. 503 sur les
-  // releases), les deux autres sont quand même renvoyées, et la catégorie en
-  // échec porte un `<clé>Error` que le front affiche discrètement.
-  async function run(key, fn) {
-    try {
-      result[key] = await fn(q);
-    } catch (err) {
-      console.error(`Recherche "${key}" en échec :`, err.message);
-      result[key] = null;
-      result[`${key}Error`] = "Indisponible pour le moment. Réessaie.";
+  try {
+    const data = await fn(q);
+    searchCache.set(key, { data, ts: Date.now() });
+    if (searchCache.size > SEARCH_CACHE_MAX) {
+      searchCache.delete(searchCache.keys().next().value); // évince la plus ancienne
+    }
+    sendJson(res, 200, { [cat]: data });
+  } catch (err) {
+    console.error(`Recherche "${cat}" en échec :`, err.message);
+    // Pas de mise en cache d'un échec : un nouvel essai relancera l'appel.
+    sendJson(res, 200, { [cat]: null, [`${cat}Error`]: "Indisponible pour le moment. Réessaie." });
+  }
+}
+
+// --- Pochettes : Cover Art Archive puis repli Deezer ---
+// IMPORTANT (CGU Deezer) : on ne télécharge/stocke JAMAIS l'image Deezer.
+// On interroge uniquement leur API de recherche (JSON) pour récupérer l'URL
+// de la pochette, que le client affichera telle quelle en <img>.
+const COVER_CACHE_TTL = 24 * 60 * 60 * 1000;
+const coverCache = new Map();
+
+async function safeFetch(url, options = {}) {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(4500), ...options });
+  } catch {
+    return null;
+  }
+}
+
+async function getCoverUrl({ type, releaseMbid, releaseGroupMbid, artist, album }) {
+  const cacheKey = `${type || "album"}:${(
+    releaseMbid ||
+    releaseGroupMbid ||
+    `${artist || ""}|${album || ""}`
+  ).toLowerCase()}`;
+  const hit = coverCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < COVER_CACHE_TTL) return hit.url;
+
+  let url = null;
+
+  // Photo d'artiste : pas de Cover Art Archive, uniquement la recherche Deezer.
+  if (type === "artist") {
+    if (artist) {
+      const r = await safeFetch(
+        `https://api.deezer.com/search/artist?q=${encodeURIComponent(artist)}&limit=1`
+      );
+      if (r && r.ok) {
+        try {
+          const a = (await r.json()).data?.[0];
+          url = a?.picture_big || a?.picture_medium || a?.picture || null;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    coverCache.set(cacheKey, { url, ts: Date.now() });
+    return url;
+  }
+
+  // 1. Cover Art Archive (release, puis release-group)
+  const caaTargets = [
+    releaseMbid && ["release", releaseMbid],
+    releaseGroupMbid && ["release-group", releaseGroupMbid],
+  ].filter(Boolean);
+  for (const [type, id] of caaTargets) {
+    const r = await safeFetch(`https://coverartarchive.org/${type}/${id}`, {
+      headers: { "User-Agent": MB_HEADERS["User-Agent"] },
+    });
+    if (r && r.ok) {
+      try {
+        const d = await r.json();
+        const front = (d.images || []).find((i) => i.front) || (d.images || [])[0];
+        const pick = front && (front.thumbnails?.["500"] || front.thumbnails?.["250"] || front.image);
+        if (pick) {
+          url = pick.replace(/^http:/, "https:");
+          break;
+        }
+      } catch {
+        /* pas de JSON exploitable */
+      }
     }
   }
 
-  // Séquentiel (MusicBrainz demande ~1 req/s ; 3 appels simultanés font
-  // grimper les 503).
-  await run("tracks", searchRecordings);
-  await wait(400);
-  await run("albums", searchReleases);
-  await wait(400);
-  await run("artists", searchArtists);
+  // 2. Repli : recherche album Deezer (URL seulement, jamais l'image)
+  if (!url && (artist || album)) {
+    const q = `artist:"${(artist || "").replace(/"/g, "")}" album:"${(album || "").replace(/"/g, "")}"`.trim();
+    const r = await safeFetch(`https://api.deezer.com/search/album?q=${encodeURIComponent(q)}&limit=1`);
+    if (r && r.ok) {
+      try {
+        const d = await r.json();
+        const a = d.data?.[0];
+        url = a?.cover_big || a?.cover_medium || a?.cover || null;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
-  sendJson(res, 200, result);
+  coverCache.set(cacheKey, { url, ts: Date.now() });
+  return url;
+}
+
+async function handleCover(params, res) {
+  const url = await getCoverUrl({
+    type: params.get("type") || null,
+    releaseMbid: params.get("releaseMbid") || null,
+    releaseGroupMbid: params.get("rg") || null,
+    artist: params.get("artist") || null,
+    album: params.get("album") || null,
+  });
+  sendJson(res, 200, { url });
 }
 
 // Historique des recherches : on enregistre la requête (dé-doublonnée et
@@ -683,8 +810,13 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const pathname = url.pathname;
 
-    if (pathname === "/api/search" && req.method === "GET") {
-      return await handleSearch(url.searchParams.get("q"), res);
+    const searchCatMatch = pathname.match(/^\/api\/search\/(tracks|albums|artists)$/);
+    if (searchCatMatch && req.method === "GET") {
+      return await handleSearchCategory(searchCatMatch[1], url.searchParams.get("q"), res);
+    }
+
+    if (pathname === "/api/cover" && req.method === "GET") {
+      return await handleCover(url.searchParams, res);
     }
 
     if (pathname === "/api/my-ratings" && req.method === "GET") {

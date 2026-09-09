@@ -424,6 +424,44 @@ morceaux MusicBrainz — est **supprimé**, ainsi que `getArtistTracks` /
   live / compilations / remixes (seul « Single » est filtré) → liste parfois
   longue ; filtrer les `secondary-types` serait une option.
 
+### R13. Recherche — cache + affichage progressif ; pochettes CAA/Deezer — 2026-09-09
+Demandé par l'utilisateur.
+- **Cache serveur** (`searchCache`, Map en mémoire, vie du process, TTL 1 h,
+  300 entrées max, LRU grossier) : clé `catégorie:requête` (minuscules).
+  Une recherche déjà obtenue n'appelle plus MusicBrainz (`{cached:true}`).
+  Les échecs ne sont PAS mis en cache (un nouvel essai relance l'appel).
+- **Affichage progressif** : `/api/search` (une réponse groupée) est remplacé
+  par `/api/search/{tracks|albums|artists}`. Le front lance les 3 en parallèle
+  et affiche chaque catégorie dès qu'elle répond. Skeleton animé dans la
+  liste + petit spinner sur l'onglet tant que la catégorie charge.
+  `searchRunId` ignore les réponses d'une recherche précédente.
+- **Verrou MusicBrainz** (`mbGated` / `mbFetch`) : **tous** les appels MB
+  (recherche, résolution, page artiste, tracklist…) passent par une file
+  d'attente unique → un seul appel MB à la fois + délai de 350 ms entre deux,
+  même quand le front tire 3 requêtes en parallèle. Timeout dur de 9 s par
+  appel (`AbortSignal.timeout`) pour ne pas bloquer la file.
+- **Pochettes** (`GET /api/cover`, `getCoverUrl`) : Cover Art Archive d'abord
+  (API JSON release puis release-group, URL de thumbnail 500/250 forcée en
+  `https`), repli sur la **recherche album Deezer** (API JSON, sans clé) si
+  CAA n'a rien. Photo d'artiste : Deezer `search/artist` uniquement.
+  **L'image Deezer n'est jamais téléchargée ni stockée côté serveur** (CGU
+  Deezer) — on ne renvoie que l'URL, affichée telle quelle en `background-image`
+  côté client. Cache d'URL en mémoire (TTL 24 h). Chargée en arrière-plan
+  (ne bloque pas l'affichage) avec un jeton anti-course. Placeholder « ♪ »
+  conservé si aucune pochette.
+- **Nettoyage** : `/api/search` (groupé) et `handleSearch` supprimés.
+
+### R14. En-tête figé (album + artiste) — 2026-09-09
+Demandé par l'utilisateur (option « qui se réduit »). Sur les pages album et
+artiste, la ligne « MA NOTATION » + les boutons de notation sont dans un bloc
+`.sticky-head` (`position: sticky; top: 0`) : la pochette et les infos
+défilent, ce bloc reste collé en haut, la liste défile dessous. Un titre
+compact (`.sticky-head-title`, `titre · artiste`) n'apparaît que quand la
+pochette est **entièrement** sortie de l'écran (IntersectionObserver sur
+l'en-tête, `threshold: 0`) ; à ce moment le bloc prend un filet + une ombre
+(`.collapsed`). La pop-up jaune est déplacée **dans** `.sticky-head` pour
+rester ancrée sous la ligne notation même quand le bloc est collé.
+
 ---
 
 ## GD-00002 — Écran de notation d'un morceau

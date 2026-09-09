@@ -72,6 +72,16 @@ const artistDiscographyEl = el("artist-discography");
 const artistTopTracksEl = el("artist-top-tracks");
 const backFromArtistBtn = el("back-from-artist");
 
+const albumSticky = el("album-sticky");
+const albumStickyTitle = el("album-sticky-title");
+const artistHeader = el("artist-header");
+const artistSticky = el("artist-sticky");
+const artistStickyTitle = el("artist-sticky-title");
+
+const trackCoverArt = el("track-header").querySelector(".cover-art");
+const albumCoverArt = el("album-header").querySelector(".cover-art");
+const artistCoverArt = artistHeader.querySelector(".cover-art");
+
 // Album actuellement ouvert dans le drill-down (pour "J'aime" et "Noter les
 // morceaux"). Réinitialisé à chaque openAlbum / openArtist.
 let currentAlbum = null; // { mbid, title, artist, year }
@@ -186,6 +196,56 @@ const albumPopupCtl = makePopup(albumPopup, albumPopupText, albumNotation);
 const artistPopupCtl = makePopup(artistPopup, artistPopupText, artistNotation);
 const showAlbumPopup = albumPopupCtl.show;
 const hideAlbumPopup = albumPopupCtl.hide;
+
+// --- Pochettes (Cover Art Archive puis repli Deezer, résolu côté serveur) ---
+
+function setCoverArt(elm, url) {
+  if (url) {
+    elm.style.backgroundImage = `url("${url}")`;
+    elm.textContent = "";
+    elm.classList.add("has-image");
+  } else {
+    elm.style.backgroundImage = "";
+    elm.textContent = "♪";
+    elm.classList.remove("has-image");
+  }
+}
+
+// Charge la pochette en arrière-plan sans bloquer l'affichage. Un jeton évite
+// qu'une pochette d'un écran précédent n'arrive après avoir changé de vue.
+async function loadCoverInto(elm, params) {
+  setCoverArt(elm, null);
+  const token = String(Date.now() + Math.random());
+  elm.dataset.coverToken = token;
+  try {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v)
+    ).toString();
+    const { url } = await api(`/api/cover?${qs}`, "GET");
+    if (elm.dataset.coverToken === token) setCoverArt(elm, url);
+  } catch {
+    /* on garde le placeholder ♪ */
+  }
+}
+
+// --- En-tête qui se réduit : la pochette défile, le bloc MA NOTATION +
+// boutons reste collé en haut. Le titre compact n'apparaît que quand la
+// pochette est entièrement sortie de l'écran. ---
+
+function setStickyCollapsed(stickyEl, titleEl, collapsed) {
+  stickyEl.classList.toggle("collapsed", collapsed);
+  titleEl.hidden = !collapsed;
+}
+
+function watchHeaderCollapse(headerEl, stickyEl, titleEl) {
+  new IntersectionObserver(
+    ([entry]) => setStickyCollapsed(stickyEl, titleEl, !entry.isIntersecting),
+    { threshold: 0 }
+  ).observe(headerEl);
+}
+
+watchHeaderCollapse(el("album-header"), albumSticky, albumStickyTitle);
+watchHeaderCollapse(artistHeader, artistSticky, artistStickyTitle);
 
 // --- Rendu ---
 
@@ -714,12 +774,24 @@ function renderCategory(container, items, createItemFn, emptyMessage, isError = 
   }
 }
 
+function renderSkeleton(container, rows = 5) {
+  container.innerHTML = "";
+  for (let i = 0; i < rows; i++) {
+    const li = document.createElement("li");
+    li.className = "skeleton-row";
+    container.appendChild(li);
+  }
+}
+
 // Une seule catégorie affichée à la fois (onglets Morceaux/Album/Artiste) ;
 // les 3 résultats sont conservés en mémoire pour basculer sans refaire de
 // recherche.
+const CATEGORIES = ["tracks", "albums", "artists"];
 let currentCategory = "tracks";
 let lastSearchData = { tracks: [], albums: [], artists: [] };
 let lastSearchErrors = { tracks: null, albums: null, artists: null };
+let lastSearchLoading = { tracks: false, albums: false, artists: false };
+let searchRunId = 0; // ignore les réponses d'une recherche précédente
 
 const CATEGORY_CONFIG = {
   tracks: { create: () => createTrackResultItem, empty: "Aucun morceau trouvé." },
@@ -727,13 +799,20 @@ const CATEGORY_CONFIG = {
   artists: { create: () => createArtistResultItem, empty: "Aucun artiste trouvé." },
 };
 
-function updateCategoryTabErrors() {
-  catTracks.classList.toggle("has-error", !!lastSearchErrors.tracks);
-  catAlbums.classList.toggle("has-error", !!lastSearchErrors.albums);
-  catArtists.classList.toggle("has-error", !!lastSearchErrors.artists);
+const CAT_TAB = { tracks: catTracks, albums: catAlbums, artists: catArtists };
+
+function updateCategoryTabState() {
+  for (const c of CATEGORIES) {
+    CAT_TAB[c].classList.toggle("loading", lastSearchLoading[c]);
+    CAT_TAB[c].classList.toggle("has-error", !lastSearchLoading[c] && !!lastSearchErrors[c]);
+  }
 }
 
 function renderCurrentCategory() {
+  if (lastSearchLoading[currentCategory]) {
+    renderSkeleton(resultsList);
+    return;
+  }
   const { create, empty } = CATEGORY_CONFIG[currentCategory];
   const err = lastSearchErrors[currentCategory];
   renderCategory(resultsList, lastSearchData[currentCategory], create(), err || empty, !!err);
@@ -741,9 +820,7 @@ function renderCurrentCategory() {
 
 function setCategory(category) {
   currentCategory = category;
-  catTracks.classList.toggle("active", category === "tracks");
-  catAlbums.classList.toggle("active", category === "albums");
-  catArtists.classList.toggle("active", category === "artists");
+  for (const c of CATEGORIES) CAT_TAB[c].classList.toggle("active", c === category);
   renderCurrentCategory();
 }
 
@@ -751,36 +828,44 @@ catTracks.addEventListener("click", () => setCategory("tracks"));
 catAlbums.addEventListener("click", () => setCategory("albums"));
 catArtists.addEventListener("click", () => setCategory("artists"));
 
+// Affichage progressif : les 3 catégories sont demandées en parallèle et
+// chacune s'affiche dès qu'elle répond (le serveur sérialise les appels
+// MusicBrainz derrière). Une recherche déjà obtenue revient du cache serveur.
 async function runSearch() {
   const q = searchInput.value.trim();
   if (!q) return;
 
+  const runId = ++searchRunId;
   hideSearchHistory();
   searchInput.blur();
-  setSearchStatus("Recherche en cours…");
-  resultsList.innerHTML = "";
+  setSearchStatus(null);
+  lastSearchData = { tracks: [], albums: [], artists: [] };
+  lastSearchErrors = { tracks: null, albums: null, artists: null };
+  lastSearchLoading = { tracks: true, albums: true, artists: true };
+  updateCategoryTabState();
+  renderCurrentCategory();
 
-  try {
-    const data = await api(`/api/search?q=${encodeURIComponent(q)}`, "GET");
-    lastSearchData = {
-      tracks: data.tracks || [],
-      albums: data.albums || [],
-      artists: data.artists || [],
-    };
-    lastSearchErrors = {
-      tracks: data.tracksError || null,
-      albums: data.albumsError || null,
-      artists: data.artistsError || null,
-    };
-    setSearchStatus(null);
-    updateCategoryTabErrors();
-    renderCurrentCategory();
-    // Best-effort : l'historique ne doit pas bloquer l'affichage des résultats.
-    api("/api/search-history", "POST", { query: q }).catch(() => {});
-  } catch (err) {
-    lastSearchErrors = { tracks: null, albums: null, artists: null };
-    updateCategoryTabErrors();
-    setSearchStatus("Recherche indisponible. Réessaie.");
+  // Best-effort : l'historique ne doit pas bloquer l'affichage des résultats.
+  api("/api/search-history", "POST", { query: q }).catch(() => {});
+
+  for (const cat of CATEGORIES) {
+    api(`/api/search/${cat}?q=${encodeURIComponent(q)}`, "GET")
+      .then((data) => {
+        if (runId !== searchRunId) return;
+        lastSearchData[cat] = data[cat] || [];
+        lastSearchErrors[cat] = data[`${cat}Error`] || null;
+      })
+      .catch(() => {
+        if (runId !== searchRunId) return;
+        lastSearchData[cat] = [];
+        lastSearchErrors[cat] = "Indisponible pour le moment. Réessaie.";
+      })
+      .finally(() => {
+        if (runId !== searchRunId) return;
+        lastSearchLoading[cat] = false;
+        updateCategoryTabState();
+        if (currentCategory === cat) renderCurrentCategory();
+      });
   }
 }
 
@@ -909,17 +994,19 @@ el("album-classic-btn").addEventListener("click", () => showAlbumPopup("Bientôt
 async function openAlbum(album) {
   // Mode "album" : en-tête riche (pochette + méta + actions), pas le titre simple.
   albumHeader.hidden = false;
-  albumActions.hidden = false;
-  albumNotation.hidden = false;
+  albumSticky.hidden = false;
   hideAlbumPopup();
   drilldownTitle.hidden = true;
   currentAlbum = null;
   currentAlbumTracks = [];
   albumTitleEl.textContent = album.title || "—";
+  albumStickyTitle.textContent = album.title || "—";
+  setStickyCollapsed(albumSticky, albumStickyTitle, false);
   albumArtistEl.textContent = album.artist || "—";
   albumArtistEl.classList.toggle("linkable", !!album.artist && album.artist !== "Artiste inconnu");
   albumYearEl.textContent = "";
   albumYearEl.hidden = true;
+  setCoverArt(albumCoverArt, null);
   renderAlbumLike(false);
   renderAlbumNotation([]);
   rateTracksBtn.disabled = true;
@@ -949,6 +1036,7 @@ async function openAlbum(album) {
     currentAlbumTracks = tracks;
 
     albumTitleEl.textContent = currentAlbum.title || "—";
+    albumStickyTitle.textContent = [currentAlbum.title, artistName].filter(Boolean).join(" · ") || "—";
     albumArtistEl.textContent = artistName || "Artiste inconnu";
     albumArtistEl.classList.toggle("linkable", !!artistName && artistName !== "Artiste inconnu");
     albumYearEl.textContent = year || "";
@@ -956,6 +1044,11 @@ async function openAlbum(album) {
     renderAlbumLike(data.isLiked);
     renderAlbumNotation(tracks);
     rateTracksBtn.disabled = tracks.length === 0;
+    loadCoverInto(albumCoverArt, {
+      releaseMbid: currentAlbum.mbid || "",
+      artist: artistName || "",
+      album: currentAlbum.title || "",
+    });
 
     drilldownResults.innerHTML = "";
     if (tracks.length === 0) {
@@ -1081,8 +1174,11 @@ async function openArtist(artist) {
   artistPopupCtl.hide();
 
   artistNameEl.textContent = artist.name;
+  artistStickyTitle.textContent = artist.name;
+  setStickyCollapsed(artistSticky, artistStickyTitle, false);
   artistTagsEl.hidden = true;
   artistTagsEl.textContent = "";
+  setCoverArt(artistCoverArt, null);
   renderArtistLike(false);
   renderArtistNotation([]);
   artistDiscographyEl.innerHTML = "";
@@ -1096,9 +1192,11 @@ async function openArtist(artist) {
 
     currentArtist = { mbid: data.mbid, name: data.name };
     artistNameEl.textContent = data.name;
+    artistStickyTitle.textContent = data.name;
     artistTagsEl.textContent = (data.tags || []).join(" · ");
     artistTagsEl.hidden = !(data.tags && data.tags.length);
     renderArtistLike(data.isLiked);
+    loadCoverInto(artistCoverArt, { type: "artist", artist: data.name || "" });
 
     const topTracks = data.topTracks || [];
     renderArtistNotation(topTracks);
@@ -1168,6 +1266,11 @@ async function loadTrack(mbid, meta = {}, context = null) {
   criteriaDraft = { performance: null, texte: null, production: null };
   render();
   showTrackView();
+  loadCoverInto(trackCoverArt, {
+    releaseMbid: track.releaseMbid || "",
+    artist: track.artist || "",
+    album: track.albumTitle || "",
+  });
 }
 
 async function selectTrack(result, context = null) {
