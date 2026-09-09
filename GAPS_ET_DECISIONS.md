@@ -462,6 +462,33 @@ l'en-tête, `threshold: 0`) ; à ce moment le bloc prend un filet + une ombre
 (`.collapsed`). La pop-up jaune est déplacée **dans** `.sticky-head` pour
 rester ancrée sous la ligne notation même quand le bloc est collé.
 
+### R15. Page d'accueil — mosaïque des dernières notations — 2026-09-09
+Demandé par l'utilisateur (visuel `home_mosaic_proposal.html`).
+- **Endpoint `GET /api/home`** : `tracks` = chaque ligne `ratings` avec une
+  NOTE GLOBALE (triées récent → ancien) ; `albums` / `artists` = regroupés
+  par **nom** (`AVG(global_rating)`, `MAX(created_at)`), faute de mbid en
+  base. Exclut « Album/Artiste inconnu » et les vides. Un morceau
+  **Classic sans note** n'apparaît pas (la tuile a besoin d'une note à
+  afficher).
+- **Vue** : barre de recherche factice (→ `showSearchView` + focus),
+  filtres pastilles Tout/Morceaux/Albums/Artistes (Tout par défaut, doré
+  plein), grille 3 colonnes de tuiles carrées (`gap: 3px`).
+- **Tuile** : cover en fond (placeholder ♪ sinon), note en overlay bas-gauche
+  (fond noir semi-transparent, texte doré, `formatNum` → 1 décimale),
+  étoile Classic haut-gauche (morceaux uniquement — pas de Classic
+  album/artiste). **Coin haut-droite laissé vide** = réservé à un futur
+  badge « noteur » communautaire.
+- **Covers** : chargées en *lazy* (IntersectionObserver sur les tuiles,
+  `rootMargin` 300px), via `/api/cover`. Une URL Deezer « sans image »
+  (segment de hash vide) est filtrée côté serveur (`cleanCoverUrl`) ;
+  côté client, l'image n'est appliquée qu'après un `Image().onload` réussi
+  (fiche morceau/album/artiste comprises).
+- **Clic tuile** : morceau → fiche (contexte album best-effort) ; album →
+  `openAlbumByName` (résolution) ; artiste → `openArtistByName`.
+- **État vide** (rien de noté) : filtres + grille masqués, message +
+  bouton « Chercher un premier morceau ». Filtre sans résultat (mais des
+  notations ailleurs) : petit message « Rien dans cette catégorie ».
+
 ---
 
 ## GD-00002 — Écran de notation d'un morceau

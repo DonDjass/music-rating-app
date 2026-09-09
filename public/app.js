@@ -222,7 +222,13 @@ async function loadCoverInto(elm, params) {
       Object.entries(params).filter(([, v]) => v)
     ).toString();
     const { url } = await api(`/api/cover?${qs}`, "GET");
-    if (elm.dataset.coverToken === token) setCoverArt(elm, url);
+    if (elm.dataset.coverToken !== token || !url) return;
+    // On ne bascule l'image que si elle charge vraiment (URL parfois morte).
+    const img = new Image();
+    img.onload = () => {
+      if (elm.dataset.coverToken === token) setCoverArt(elm, url);
+    };
+    img.src = url;
   } catch {
     /* on garde le placeholder ♪ */
   }
@@ -530,6 +536,21 @@ async function openArtistByName(name) {
   }
 }
 
+async function openAlbumByName(title, artist) {
+  if (!title || title === "Album inconnu") return;
+  showToast("Recherche de l'album…");
+  try {
+    const { album } = await api(
+      `/api/resolve-album?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist || "")}`,
+      "GET"
+    );
+    if (album) openAlbum(album);
+    else showToast("Fiche album introuvable.");
+  } catch (err) {
+    showToast("Fiche album introuvable.");
+  }
+}
+
 trackArtistEl.addEventListener("click", () => {
   if (trackArtistEl.classList.contains("linkable")) openArtistByName(track.artist);
 });
@@ -540,22 +561,12 @@ albumArtistEl.addEventListener("click", () => {
   }
 });
 
-trackAlbumEl.addEventListener("click", async () => {
+trackAlbumEl.addEventListener("click", () => {
   if (!trackAlbumEl.classList.contains("linkable")) return;
   if (track.releaseMbid) {
     openAlbum({ mbid: track.releaseMbid, title: track.albumTitle, artist: track.artist });
-    return;
-  }
-  showToast("Recherche de l'album…");
-  try {
-    const { album } = await api(
-      `/api/resolve-album?title=${encodeURIComponent(track.albumTitle)}&artist=${encodeURIComponent(track.artist || "")}`,
-      "GET"
-    );
-    if (album) openAlbum(album);
-    else showToast("Fiche album introuvable.");
-  } catch (err) {
-    showToast("Fiche album introuvable.");
+  } else {
+    openAlbumByName(track.albumTitle, track.artist);
   }
 });
 
@@ -655,13 +666,176 @@ function showArtistView() {
   showOnly(artistView);
 }
 
-tabHome.addEventListener("click", showHomeView);
+tabHome.addEventListener("click", () => {
+  showHomeView();
+  loadHome();
+});
 tabSettings.addEventListener("click", showSettingsView);
 tabSearch.addEventListener("click", showSearchView);
 tabMyRatings.addEventListener("click", () => {
   showMyRatingsView();
   loadMyRatings();
 });
+
+// --- Accueil : mosaïque des dernières notations ---
+
+const homeSearchBar = el("home-search-bar");
+const homeFilters = el("home-filters");
+const homeStatus = el("home-status");
+const homeGrid = el("home-grid");
+const homeEmpty = el("home-empty");
+const homeEmptyCta = el("home-empty-cta");
+
+let homeData = { tracks: [], albums: [], artists: [] };
+let homeFilter = "all";
+
+const goToSearch = () => {
+  showSearchView();
+  searchInput.focus();
+};
+homeSearchBar.addEventListener("click", goToSearch);
+homeEmptyCta.addEventListener("click", goToSearch);
+
+homeFilters.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-filter");
+  if (!btn) return;
+  homeFilter = btn.dataset.filter;
+  for (const b of homeFilters.querySelectorAll(".home-filter")) {
+    b.classList.toggle("active", b === btn);
+  }
+  renderHome();
+});
+
+// Pochettes des tuiles : chargées seulement à l'approche de l'écran.
+const tileCoverObserver = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      tileCoverObserver.unobserve(entry.target);
+      loadTileCover(entry.target);
+    }
+  },
+  { rootMargin: "300px 0px" }
+);
+
+async function loadTileCover(tile) {
+  const d = tile.dataset;
+  const params =
+    d.type === "artist"
+      ? { type: "artist", artist: d.artist }
+      : d.type === "album"
+      ? { artist: d.artist, album: d.album }
+      : { releaseMbid: d.releaseMbid, artist: d.artist, album: d.album };
+  try {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    const { url } = await api(`/api/cover?${qs}`, "GET");
+    if (!url || !tile.isConnected) return;
+    const img = new Image();
+    img.onload = () => {
+      if (!tile.isConnected) return;
+      tile.style.backgroundImage = `url("${url}")`;
+      const ph = tile.querySelector(".home-tile-ph");
+      if (ph) ph.hidden = true;
+    };
+    img.src = url;
+  } catch {
+    /* garde le placeholder */
+  }
+}
+
+function createHomeTile(item) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "home-tile";
+  tile.dataset.type = item.type;
+  tile.dataset.artist = item.artist || "";
+  tile.dataset.album = item.album || (item.type === "album" ? item.title : "") || "";
+  tile.dataset.releaseMbid = item.releaseMbid || "";
+
+  const ph = document.createElement("span");
+  ph.className = "home-tile-ph";
+  ph.textContent = "♪";
+  tile.appendChild(ph);
+
+  if (item.isClassic) {
+    const star = document.createElement("span");
+    star.className = "home-tile-star";
+    star.textContent = "★";
+    tile.appendChild(star);
+  }
+
+  const note = document.createElement("span");
+  note.className = "home-tile-note";
+  note.textContent = formatNum(item.note);
+  tile.appendChild(note);
+
+  tile.addEventListener("click", () => openHomeTile(item));
+  tileCoverObserver.observe(tile);
+  return tile;
+}
+
+async function openHomeTile(item) {
+  if (item.type === "album") return openAlbumByName(item.title, item.artist);
+  if (item.type === "artist") return openArtistByName(item.artist);
+
+  // morceau : la ligne existe déjà en base
+  homeStatus.hidden = false;
+  homeStatus.textContent = "Chargement…";
+  try {
+    const context = await buildAlbumContextFor({ mbid: item.mbid, releaseMbid: item.releaseMbid });
+    await loadTrack(
+      item.mbid,
+      { title: item.title, artist: item.artist, album: item.album, releaseMbid: item.releaseMbid },
+      context
+    );
+    homeStatus.hidden = true;
+  } catch (err) {
+    homeStatus.textContent = "Impossible de charger ce morceau. Réessaie.";
+  }
+}
+
+function homeVisibleItems() {
+  if (homeFilter === "all") {
+    return [...homeData.tracks, ...homeData.albums, ...homeData.artists].sort((a, b) =>
+      (b.createdAt || "").localeCompare(a.createdAt || "")
+    );
+  }
+  return homeData[homeFilter] || [];
+}
+
+function renderHome() {
+  const total = homeData.tracks.length + homeData.albums.length + homeData.artists.length;
+  const empty = total === 0;
+
+  homeFilters.hidden = empty;
+  homeGrid.hidden = empty;
+  homeEmpty.hidden = !empty;
+  tileCoverObserver.disconnect();
+  homeGrid.innerHTML = "";
+  if (empty) return;
+
+  const items = homeVisibleItems();
+  if (items.length === 0) {
+    const msg = document.createElement("div");
+    msg.className = "home-grid-msg";
+    msg.textContent = "Rien dans cette catégorie pour l'instant.";
+    homeGrid.appendChild(msg);
+    return;
+  }
+  for (const item of items) homeGrid.appendChild(createHomeTile(item));
+}
+
+async function loadHome() {
+  homeStatus.hidden = false;
+  homeStatus.textContent = "Chargement…";
+  try {
+    homeData = await api("/api/home", "GET");
+  } catch (err) {
+    homeData = { tracks: [], albums: [], artists: [] };
+  }
+  homeStatus.hidden = true;
+  renderHome();
+}
 
 function setSearchStatus(message) {
   if (!message) {

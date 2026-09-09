@@ -433,6 +433,13 @@ async function safeFetch(url, options = {}) {
   }
 }
 
+// Deezer renvoie parfois une URL "sans image" (segment de hash vide,
+// ex. .../images/artist//500x500-...) -> on la traite comme absente.
+function cleanCoverUrl(url) {
+  if (!url || /\/images\/(?:artist|cover)\/\//.test(url)) return null;
+  return url;
+}
+
 async function getCoverUrl({ type, releaseMbid, releaseGroupMbid, artist, album }) {
   const cacheKey = `${type || "album"}:${(
     releaseMbid ||
@@ -453,7 +460,7 @@ async function getCoverUrl({ type, releaseMbid, releaseGroupMbid, artist, album 
       if (r && r.ok) {
         try {
           const a = (await r.json()).data?.[0];
-          url = a?.picture_big || a?.picture_medium || a?.picture || null;
+          url = cleanCoverUrl(a?.picture_big || a?.picture_medium || a?.picture || null);
         } catch {
           /* ignore */
         }
@@ -495,7 +502,7 @@ async function getCoverUrl({ type, releaseMbid, releaseGroupMbid, artist, album 
       try {
         const d = await r.json();
         const a = d.data?.[0];
-        url = a?.cover_big || a?.cover_medium || a?.cover || null;
+        url = cleanCoverUrl(a?.cover_big || a?.cover_medium || a?.cover || null);
       } catch {
         /* ignore */
       }
@@ -641,6 +648,73 @@ function handleMyRatings(res) {
     .all();
 
   sendJson(res, 200, { results: rows.map(serializeRow) });
+}
+
+// Accueil : mosaïque des éléments notés. Morceaux = chaque ligne avec une
+// NOTE GLOBALE ; albums / artistes = regroupés par nom (moyenne des morceaux
+// notés), triés du plus récemment noté au plus ancien.
+function handleHome(res) {
+  const tracks = db
+    .prepare(
+      `SELECT mbid, track_title, album, artist, global_rating AS note,
+              is_classic, release_mbid, created_at
+         FROM ratings
+        WHERE mbid IS NOT NULL AND global_rating IS NOT NULL
+        ORDER BY created_at DESC`
+    )
+    .all()
+    .map((r) => ({
+      type: "track",
+      mbid: r.mbid,
+      title: r.track_title || r.album,
+      artist: r.artist,
+      album: r.album,
+      releaseMbid: r.release_mbid,
+      note: r.note,
+      isClassic: !!r.is_classic,
+      createdAt: r.created_at,
+    }));
+
+  const albums = db
+    .prepare(
+      `SELECT album, artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
+         FROM ratings
+        WHERE global_rating IS NOT NULL
+          AND album IS NOT NULL AND album NOT IN ('', 'Album inconnu')
+          AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
+        GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE
+        ORDER BY created_at DESC`
+    )
+    .all()
+    .map((r) => ({
+      type: "album",
+      title: r.album,
+      artist: r.artist,
+      note: round1(r.note),
+      isClassic: false,
+      createdAt: r.created_at,
+    }));
+
+  const artists = db
+    .prepare(
+      `SELECT artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
+         FROM ratings
+        WHERE global_rating IS NOT NULL
+          AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
+        GROUP BY artist COLLATE NOCASE
+        ORDER BY created_at DESC`
+    )
+    .all()
+    .map((r) => ({
+      type: "artist",
+      title: r.artist,
+      artist: r.artist,
+      note: round1(r.note),
+      isClassic: false,
+      createdAt: r.created_at,
+    }));
+
+  sendJson(res, 200, { tracks, albums, artists });
 }
 
 function handleSaveFeeling(mbid, body, res) {
@@ -821,6 +895,10 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === "/api/my-ratings" && req.method === "GET") {
       return handleMyRatings(res);
+    }
+
+    if (pathname === "/api/home" && req.method === "GET") {
+      return handleHome(res);
     }
 
     if (pathname === "/api/search-history" && req.method === "GET") {

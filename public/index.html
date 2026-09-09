@@ -153,8 +153,28 @@
     </section>
 
     <section id="home-view" hidden>
-      <h1 class="search-title">Accueil</h1>
-      <p class="placeholder-msg">Bientôt disponible.</p>
+      <button class="home-search-bar" id="home-search-bar" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <line x1="15.5" y1="15.5" x2="21" y2="21" />
+        </svg>
+        <span>Chercher un morceau, un album, un artiste…</span>
+      </button>
+
+      <div class="home-filters" id="home-filters">
+        <button class="home-filter active" data-filter="all" type="button">Tout</button>
+        <button class="home-filter" data-filter="tracks" type="button">Morceaux</button>
+        <button class="home-filter" data-filter="albums" type="button">Albums</button>
+        <button class="home-filter" data-filter="artists" type="button">Artistes</button>
+      </div>
+
+      <p id="home-status" class="search-status" hidden></p>
+      <div class="home-grid" id="home-grid"></div>
+
+      <div class="home-empty" id="home-empty" hidden>
+        <p>Tu n'as encore rien noté.</p>
+        <button class="home-empty-cta" id="home-empty-cta" type="button">Chercher un premier morceau</button>
+      </div>
     </section>
 
     <section id="settings-view" hidden>
