@@ -390,6 +390,30 @@ par aucune règle du TRS.
 - **À cadrer :** faut-il une vue « Mes favoris » ? un impact sur l'accueil ?
   (non développé pour l'instant).
 
+## B9. Bouton « Écouter » — deep link Deezer
+
+**Contexte :** le bouton « Écouter » (des maquettes) était décoratif. Rendu
+fonctionnel sur morceau, album et artiste (bouton ajouté à la fiche artiste,
+absent de la maquette).
+
+**Business Rules proposées :**
+- `RQ-000XX` — Depuis la fiche d'un morceau / album / artiste, l'utilisateur
+  peut ouvrir l'élément correspondant sur Deezer.
+- `BR-000XX` — La correspondance Deezer est résolue une seule fois (API de
+  recherche Deezer, meilleur résultat) puis mémorisée. Si aucune
+  correspondance : le bouton est désactivé et indique « Non trouvé sur
+  Deezer ».
+- `BR-000XX` — L'ouverture se fait via l'URL Deezer standard
+  (`deezer.com/track|album|artist/<id>`), qui laisse le système ouvrir
+  l'app Deezer si elle est installée, sinon le site.
+- `BR-000XX` — **Contrainte légale :** seul l'identifiant Deezer public est
+  stocké ; aucun contenu Deezer n'est téléchargé ni hébergé (cf. B7).
+- `BR-000XX` — **Extrait 30 s (fiche morceau) :** un bouton « Extrait » joue
+  en place l'extrait de 30 s exposé par l'API Deezer. Seule l'URL d'extrait
+  (transitoire, rafraîchie à la demande) est utilisée ; rien n'est stocké
+  durablement au-delà de cette URL et de l'identifiant. Grisé si le morceau
+  n'a pas d'extrait. Non prévu pour album/artiste (Deezer n'en fournit pas).
+
 ---
 
 # PARTIE C — Points volontairement laissés hors spec (ne pas spécifier maintenant)

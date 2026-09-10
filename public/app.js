@@ -234,6 +234,124 @@ async function loadCoverInto(elm, params) {
   }
 }
 
+// --- Bouton « Écouter » : deep link Deezer (résolu et mémorisé côté serveur) ---
+// `params` : { type: 'track'|'album'|'artist', mbid, title, artist }.
+// Un jeton évite qu'une réponse d'un écran précédent ne s'applique après coup.
+const trackPlayBtn = el("track-play-btn");
+const albumPlayBtn = el("album-play-btn");
+const artistPlayBtn = el("artist-play-btn");
+const trackPreviewBtn = el("track-preview-btn");
+const previewAudio = el("track-preview-audio");
+
+function deezerQs(params) {
+  return new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+}
+
+// Album / artiste : simple deep link (pas d'extrait).
+async function wireDeezerButton(btn, params, defaultLabel) {
+  const token = String(Date.now() + Math.random());
+  btn.dataset.dzToken = token;
+  btn.classList.remove("dz-ready", "dz-none");
+  btn.onclick = null;
+  btn.textContent = defaultLabel;
+
+  if (!params.mbid) return;
+
+  try {
+    const { url } = await api(`/api/deezer-link?${deezerQs(params)}`, "GET");
+    if (btn.dataset.dzToken !== token) return;
+
+    if (url) {
+      btn.classList.add("dz-ready");
+      btn.onclick = () => window.open(url, "_blank", "noopener");
+    } else {
+      btn.classList.add("dz-none");
+      btn.textContent = "Non trouvé sur Deezer";
+    }
+  } catch {
+    // Recherche indisponible : on laisse le libellé par défaut (non bloquant).
+  }
+}
+
+// --- Extrait Deezer 30 s (fiche morceau uniquement) ---
+
+function setPreviewPlaying(playing) {
+  trackPreviewBtn.classList.toggle("is-playing", playing);
+  trackPreviewBtn.textContent = playing ? "⏸ Extrait" : "▶ Extrait";
+}
+
+function stopPreview() {
+  if (!previewAudio) return;
+  if (!previewAudio.paused) previewAudio.pause();
+  previewAudio.removeAttribute("src");
+  previewAudio.load(); // décharge le buffer
+  setPreviewPlaying(false);
+}
+
+previewAudio.addEventListener("play", () => setPreviewPlaying(true));
+previewAudio.addEventListener("pause", () => setPreviewPlaying(false));
+previewAudio.addEventListener("ended", () => {
+  setPreviewPlaying(false);
+  previewAudio.currentTime = 0;
+});
+
+function togglePreview() {
+  const url = trackPreviewBtn.dataset.previewUrl;
+  if (!url) return;
+  if (previewAudio.currentSrc !== url && previewAudio.src !== url) {
+    previewAudio.src = url;
+  }
+  if (previewAudio.paused) {
+    previewAudio.play().catch(() => showToast("Lecture de l'extrait impossible."));
+  } else {
+    previewAudio.pause();
+  }
+}
+
+// Fiche morceau : câble le bouton « Écouter » (deep link) ET le bouton
+// « Extrait » (lecture in-page) à partir d'un seul appel /api/deezer-link.
+async function wireTrackDeezer(mbid, title, artist) {
+  const token = String(Date.now() + Math.random());
+  trackPlayBtn.dataset.dzToken = token;
+
+  stopPreview();
+  trackPlayBtn.classList.remove("dz-ready", "dz-none");
+  trackPlayBtn.onclick = null;
+  trackPlayBtn.textContent = "▶ Écouter";
+  trackPreviewBtn.classList.remove("dz-ready", "dz-none", "is-playing");
+  trackPreviewBtn.onclick = null;
+  delete trackPreviewBtn.dataset.previewUrl;
+  trackPreviewBtn.textContent = "▶ Extrait";
+
+  if (!mbid) return;
+
+  try {
+    const { url, preview } = await api(
+      `/api/deezer-link?${deezerQs({ type: "track", mbid, title, artist })}`,
+      "GET"
+    );
+    if (trackPlayBtn.dataset.dzToken !== token) return;
+
+    if (url) {
+      trackPlayBtn.classList.add("dz-ready");
+      trackPlayBtn.onclick = () => window.open(url, "_blank", "noopener");
+    } else {
+      trackPlayBtn.classList.add("dz-none");
+      trackPlayBtn.textContent = "Non trouvé sur Deezer";
+    }
+
+    if (preview) {
+      trackPreviewBtn.classList.add("dz-ready");
+      trackPreviewBtn.dataset.previewUrl = preview;
+      trackPreviewBtn.onclick = togglePreview;
+    } else {
+      trackPreviewBtn.classList.add("dz-none");
+    }
+  } catch {
+    // Non bloquant : les deux boutons gardent leur libellé par défaut.
+  }
+}
+
 // --- En-tête qui se réduit : la pochette défile, le bloc MA NOTATION +
 // boutons reste collé en haut. Le titre compact n'apparaît que quand la
 // pochette est entièrement sortie de l'écran. ---
@@ -613,6 +731,8 @@ rateTracksBtn.addEventListener("click", () => {
 const ALL_VIEWS = [homeView, searchView, drilldownView, artistView, myRatingsView, settingsView, trackView];
 
 function showOnly(view) {
+  // Tout changement d'écran coupe l'extrait 30 s en cours (fiche morceau).
+  stopPreview();
   for (const v of ALL_VIEWS) v.hidden = v !== view;
 }
 
@@ -1662,6 +1782,7 @@ async function openAlbum(album) {
   albumYearEl.hidden = true;
   setCoverArt(albumCoverArt, null);
   renderAlbumLike(false);
+  wireDeezerButton(albumPlayBtn, {}, "▶ Écouter");
   albumNotation = null;
   albumEditing = null;
   albumCardForced = false;
@@ -1706,6 +1827,11 @@ async function openAlbum(album) {
       artist: artistName || "",
       album: currentAlbum.title || "",
     });
+    wireDeezerButton(
+      albumPlayBtn,
+      { type: "album", mbid: currentAlbum.mbid, title: currentAlbum.title, artist: artistName },
+      "▶ Écouter"
+    );
 
     drilldownResults.innerHTML = "";
     if (tracks.length === 0) {
@@ -1837,6 +1963,7 @@ async function openArtist(artist) {
   artistTagsEl.textContent = "";
   setCoverArt(artistCoverArt, null);
   renderArtistLike(false);
+  wireDeezerButton(artistPlayBtn, {}, "▶ Écouter");
   renderArtistNotation([]);
   artistDiscographyEl.innerHTML = "";
   artistTopTracksEl.innerHTML = "";
@@ -1854,6 +1981,11 @@ async function openArtist(artist) {
     artistTagsEl.hidden = !(data.tags && data.tags.length);
     renderArtistLike(data.isLiked);
     loadCoverInto(artistCoverArt, { type: "artist", artist: data.name || "" });
+    wireDeezerButton(
+      artistPlayBtn,
+      { type: "artist", mbid: data.mbid, title: data.name, artist: data.name },
+      "▶ Écouter"
+    );
 
     const topTracks = data.topTracks || [];
     renderArtistNotation(topTracks);
@@ -1928,6 +2060,7 @@ async function loadTrack(mbid, meta = {}, context = null) {
     artist: track.artist || "",
     album: track.albumTitle || "",
   });
+  wireTrackDeezer(track.mbid, track.title, track.artist);
 }
 
 async function selectTrack(result, context = null) {

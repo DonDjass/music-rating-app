@@ -731,8 +731,18 @@ body {
   margin-top: 12px;
 }
 
+/* Fiche morceau : barre d'actions pleine largeur sous l'en-tête
+   (Écouter / Extrait / J'aime) — plus de place qu'à côté des métadonnées,
+   pour tenir sans débordement sur écran étroit. */
+.track-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px 0;
+}
+
 .play-btn {
-  flex: 1;
+  flex: 2;
   min-width: 0;
   background: var(--gold);
   border: none;
@@ -745,6 +755,58 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* "Extrait" (fiche morceau) : contour discret à côté du bouton "Écouter".
+   Plus étroit que le bouton principal (flex 1 vs 2). */
+.preview-btn {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1.5px solid var(--gold);
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 8.5px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-btn:hover:not(.dz-none) {
+  background: rgba(244, 196, 48, 0.12);
+}
+
+/* En lecture : le bouton se remplit pour signaler l'état pause disponible. */
+.preview-btn.is-playing {
+  background: var(--gold);
+  color: #171412;
+}
+
+/* Aucun extrait disponible : terne et inactif (comme le bouton "Écouter"). */
+.preview-btn.dz-none {
+  border-color: var(--grey);
+  color: var(--grey);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Deep link Deezer résolu : le bouton devient cliquable. */
+.play-btn.dz-ready {
+  cursor: pointer;
+}
+
+.play-btn.dz-ready:hover {
+  filter: brightness(1.05);
+}
+
+/* Aucune correspondance Deezer : bouton terne et inactif. */
+.play-btn.dz-none {
+  background: var(--btn-grey);
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .like-btn {

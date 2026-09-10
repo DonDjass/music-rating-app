@@ -65,7 +65,7 @@
           <p class="artist" id="album-artist">—</p>
           <p class="tags" id="album-year">—</p>
           <div class="header-actions">
-            <button class="play-btn" type="button">▶ Écouter</button>
+            <button class="play-btn" id="album-play-btn" type="button">▶ Écouter</button>
             <button class="like-btn" id="album-like-btn" type="button" aria-label="J'aime">♡</button>
           </div>
         </div>
@@ -216,6 +216,7 @@
           <h1 id="artist-name">—</h1>
           <p class="tags" id="artist-tags" hidden></p>
           <div class="header-actions">
+            <button class="play-btn" id="artist-play-btn" type="button">▶ Écouter</button>
             <button class="like-btn" id="artist-like-btn" type="button" aria-label="J'aime">♡</button>
           </div>
         </div>
@@ -303,12 +304,17 @@
           <p class="artist" id="track-artist">—</p>
           <p class="album" id="track-album">—</p>
           <p class="tags" id="track-tags">—</p>
-          <div class="header-actions">
-            <button class="play-btn" type="button">▶ Écouter le morceau</button>
-            <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
-          </div>
         </div>
       </header>
+
+      <!-- Barre d'actions pleine largeur : "Écouter" (deep link Deezer),
+           "Extrait" (lecture 30 s in-page), "J'aime". -->
+      <div class="track-actions-row">
+        <button class="play-btn" id="track-play-btn" type="button">▶ Écouter</button>
+        <button class="preview-btn" id="track-preview-btn" type="button" aria-label="Écouter l'extrait de 30 secondes">▶ Extrait</button>
+        <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
+      </div>
+      <audio id="track-preview-audio" preload="none"></audio>
 
       <section class="notation-card">
       <div class="notation-title-row">

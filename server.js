@@ -63,10 +63,22 @@ const NEW_COLUMNS = {
 //  - morceaux_included : préférence utilisateur du toggle « Prendre en
 //    compte mes notes des morceaux ». NULL = défaut (compté dès éligible) ;
 //    0 = exclu par choix ; 1 = inclus par choix.
+//  - deezer_id : identifiant Deezer de l'entité (morceau / album / artiste),
+//    résolu une fois via l'API de recherche Deezer puis mémorisé.
+//    NULL + deezer_checked = 1 => recherche faite, aucune correspondance.
+//  - deezer_preview_url : URL de l'extrait 30 s (morceau seulement). Ces URL
+//    Deezer sont signées et EXPIRENT vite (~15 min) → elles sont rafraîchies
+//    via /track/{id} lors d'une visite ultérieure. "none" = ce morceau n'a
+//    pas d'extrait Deezer (permanent) ; NULL = pas encore résolu.
+//  - deezer_checked : 1 dès qu'une recherche Deezer a été tentée pour cette
+//    entité (évite de re-chercher à chaque visite de la fiche).
 const NEW_COLUMNS_2 = {
   entity_type: "TEXT NOT NULL DEFAULT 'track'",
   album_track_count: "INTEGER",
   morceaux_included: "INTEGER",
+  deezer_id: "TEXT",
+  deezer_preview_url: "TEXT",
+  deezer_checked: "INTEGER NOT NULL DEFAULT 0",
 };
 
 const existingColumns = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
@@ -75,6 +87,7 @@ for (const [name, type] of Object.entries({ ...NEW_COLUMNS, ...NEW_COLUMNS_2 }))
     db.exec(`ALTER TABLE ratings ADD COLUMN ${name} ${type}`);
   }
 }
+
 
 // Évaluation par critères d'une notation (album pour l'instant ; morceau plus
 // tard). Une ligne par critère : le nombre et la nature varient selon le
@@ -799,6 +812,153 @@ async function handleCover(params, res) {
   sendJson(res, 200, { url });
 }
 
+// --- Deep link Deezer (bouton « Écouter ») ---
+// On résout l'entité MusicBrainz vers son équivalent Deezer via l'API de
+// recherche Deezer (même API que le repli des pochettes), une seule fois :
+// l'ID est mémorisé sur la ligne `ratings` (deezer_id + deezer_checked).
+
+const DEEZER_SEG = { track: "track", album: "album", artist: "artist" };
+
+function deezerUrl(type, id) {
+  return id ? `https://www.deezer.com/${DEEZER_SEG[type] || "track"}/${id}` : null;
+}
+
+function dzQuote(s) {
+  return (s || "").replace(/["\\]/g, " ").trim();
+}
+
+const PREVIEW_NONE = "none"; // sentinelle : ce morceau n'a pas d'extrait
+
+// URL d'extrait Deezer expirée (ou sur le point de l'être) ? Elles portent un
+// paramètre `exp=<epoch>` dans la signature `hdnea`.
+function previewExpired(url) {
+  const m = /exp=(\d+)/.exec(url || "");
+  return m ? Number(m[1]) * 1000 < Date.now() + 30000 : false;
+}
+
+// Renvoie { id, preview } (id string ou null si aucune correspondance ;
+// preview = URL de l'extrait 30 s ou "" si le morceau n'en a pas, morceau
+// uniquement), ou `undefined` si la recherche a échoué (→ ne pas mémoriser).
+// La recherche plein-texte de Deezer classe le meilleur résultat en premier
+// (les filtres `field:"value"` se sont montrés peu fiables ici).
+async function searchDeezer(type, title, artist) {
+  const seg = DEEZER_SEG[type];
+  if (!seg) return undefined;
+
+  const t = dzQuote(title);
+  const a = dzQuote(artist);
+
+  const queries =
+    type === "artist" ? [a] : [`${t} ${a}`.trim(), t];
+
+  let anySucceeded = false;
+  for (const q of queries) {
+    if (!q) continue;
+    const r = await safeFetch(
+      `https://api.deezer.com/search/${seg}?q=${encodeURIComponent(q)}&limit=1`
+    );
+    if (!r || !r.ok) continue;
+    anySucceeded = true;
+    try {
+      const hit = (await r.json())?.data?.[0];
+      if (hit && hit.id != null) {
+        return { id: String(hit.id), preview: type === "track" ? hit.preview || "" : null };
+      }
+    } catch {
+      /* réponse inexploitable */
+    }
+  }
+  return anySucceeded ? { id: null, preview: null } : undefined;
+}
+
+// Récupère une URL d'extrait fraîche pour un ID Deezer connu (les URL d'extrait
+// expirent vite). "" => le morceau n'a pas d'extrait ; undefined => échec.
+async function deezerFreshPreview(deezerId) {
+  const r = await safeFetch(`https://api.deezer.com/track/${encodeURIComponent(deezerId)}`);
+  if (!r || !r.ok) return undefined;
+  try {
+    const d = await r.json();
+    if (!d || d.error) return undefined;
+    return d.preview || "";
+  } catch {
+    return undefined;
+  }
+}
+
+// Mémorise le résultat (crée une ligne `ratings` minimale si l'entité n'en a
+// pas encore — album/artiste non notés). Ne touche jamais entity_type d'une
+// ligne existante.
+function cacheDeezerResult(mbid, type, meta, result) {
+  let row = db.prepare(`SELECT id FROM ratings WHERE mbid = ?`).get(mbid);
+  if (!row) {
+    const info = db
+      .prepare(
+        `INSERT INTO ratings (mbid, entity_type, album, artist, track_title, release_mbid)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        mbid,
+        type,
+        meta.album || meta.title || "—",
+        meta.artist || "—",
+        meta.title || null,
+        type === "album" ? mbid : null
+      );
+    row = { id: info.lastInsertRowid };
+  }
+  db.prepare(
+    `UPDATE ratings SET deezer_id = ?, deezer_preview_url = ?, deezer_checked = 1 WHERE id = ?`
+  ).run(result.id || null, result.preview ? result.preview : PREVIEW_NONE, row.id);
+}
+
+async function handleDeezerLink(params, res) {
+  const type = params.get("type") || "track";
+  const mbid = params.get("mbid");
+  if (!mbid || !DEEZER_SEG[type]) {
+    return sendJson(res, 400, { error: "Paramètres invalides." });
+  }
+  const title = params.get("title") || "";
+  const artist = params.get("artist") || "";
+
+  const row = db
+    .prepare(`SELECT deezer_id, deezer_preview_url, deezer_checked FROM ratings WHERE mbid = ?`)
+    .get(mbid);
+
+  if (row && row.deezer_checked) {
+    let preview = row.deezer_preview_url;
+    // Rafraîchit l'URL d'extrait si elle manque ou a expiré (morceau connu).
+    if (
+      type === "track" &&
+      row.deezer_id &&
+      preview !== PREVIEW_NONE &&
+      (!preview || previewExpired(preview))
+    ) {
+      const fresh = await deezerFreshPreview(row.deezer_id);
+      if (fresh !== undefined) {
+        preview = fresh === "" ? PREVIEW_NONE : fresh;
+        db.prepare(`UPDATE ratings SET deezer_preview_url = ? WHERE mbid = ?`).run(preview, mbid);
+      }
+    }
+    return sendJson(res, 200, {
+      id: row.deezer_id || null,
+      url: deezerUrl(type, row.deezer_id),
+      preview: preview && preview !== PREVIEW_NONE ? preview : null,
+    });
+  }
+
+  const result = await searchDeezer(type, title, artist);
+  if (result === undefined) {
+    // Recherche indisponible : on ne mémorise rien, le client réessaiera.
+    return sendJson(res, 200, { id: null, url: null, preview: null, transient: true });
+  }
+  cacheDeezerResult(mbid, type, { title, artist }, result);
+  sendJson(res, 200, {
+    id: result.id || null,
+    url: deezerUrl(type, result.id),
+    preview: result.preview ? result.preview : null,
+  });
+}
+
 // Historique des recherches : on enregistre la requête (dé-doublonnée et
 // remontée en tête), et on relit les 10 plus récentes.
 function handleRecordSearch(body, res) {
@@ -1292,6 +1452,10 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === "/api/cover" && req.method === "GET") {
       return await handleCover(url.searchParams, res);
+    }
+
+    if (pathname === "/api/deezer-link" && req.method === "GET") {
+      return await handleDeezerLink(url.searchParams, res);
     }
 
     if (pathname === "/api/my-ratings" && req.method === "GET") {

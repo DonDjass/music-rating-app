@@ -42,6 +42,57 @@ entrées sont donc désormais de l'historique, pas la cible.
 
 ---
 
+## Deep link Deezer — bouton « Écouter » (hors spec, demande explicite 2026-09-10)
+
+Le bouton « Écouter » (morceau / album / artiste) était purement décoratif
+(aucune règle du TRS ne le couvre). Rendu fonctionnel :
+
+- **Résolution :** API de recherche Deezer (même API que le repli des
+  pochettes, cf. SPEC_UPDATES B7). Recherche **plein-texte** `titre artiste`
+  (les filtres `field:"value"` de Deezer se sont montrés peu fiables — ils
+  renvoyaient des faux positifs ou rien). On prend `data[0]` (Deezer classe
+  le meilleur résultat en premier).
+- **Persistance :** colonnes `deezer_id` + `deezer_checked` sur `ratings`.
+  `deezer_checked = 1` mémorise qu'une recherche a eu lieu (y compris un
+  échec : `deezer_id` NULL) → pas de nouvelle recherche aux visites suivantes.
+- **Album / artiste non notés :** `GET /api/deezer-link` crée une ligne
+  `ratings` minimale (entity_type album/artiste, sans notation) pour porter
+  le cache. Invisible partout (filtres `entity_type='track'` + `global_rating`).
+  Alternative « table dédiée » écartée pour rester sur « une colonne » comme
+  demandé.
+- **Ouverture :** `window.open('https://www.deezer.com/<type>/<id>', '_blank')`.
+  Le format d'URL standard laisse l'OS ouvrir l'app Deezer si installée
+  (pas de détection app/navigateur côté client, comme demandé).
+- **Aucune correspondance :** bouton grisé + « Non trouvé sur Deezer ».
+- **Recherche indisponible** (Deezer down) : réponse `transient: true`, rien
+  n'est mémorisé, le bouton garde son libellé par défaut (non bloquant).
+- **Fiche artiste :** un bouton « Écouter » a été **ajouté** dans l'en-tête
+  (il n'y en avait pas dans la maquette) pour homogénéité avec morceau/album.
+- **Contrainte légale :** on ne stocke qu'un identifiant numérique public et
+  on pointe vers deezer.com — aucun contenu Deezer n'est téléchargé/hébergé
+  (cohérent avec SPEC_UPDATES B7).
+
+### Extrait 30 s — bouton « Extrait » (fiche morceau uniquement, ajouté 2026-09-10)
+
+En plus du deep link, la fiche morceau expose un bouton « Extrait » qui joue
+in-page l'extrait de 30 s fourni par l'API Deezer (`track.preview`).
+
+- **Portée :** morceau seulement (Deezer ne renvoie pas d'extrait pour un
+  album/artiste). Absent des maquettes.
+- **Persistance :** colonne `deezer_preview_url` sur `ratings`. Sentinelle
+  `"none"` = ce morceau n'a pas d'extrait (permanent, on ne re-cherche pas) ;
+  `NULL` = pas encore résolu.
+- **Expiration :** les URL d'extrait Deezer sont signées et expirent vite
+  (~15 min, paramètre `exp=` dans `hdnea`). À chaque visite, si l'URL manque
+  ou est expirée, elle est rafraîchie via `GET /track/{id}` puis re-mémorisée.
+- **Lecture :** `<audio>` unique, coupé à tout changement d'écran
+  (`showOnly` → `stopPreview`). Le buffer est déchargé (`load()`) à l'arrêt.
+- **Aucun extrait :** bouton « Extrait » grisé/inactif.
+- **Lignes déjà en cache avant cette version :** `deezer_preview_url` NULL —
+  l'extrait est backfillé automatiquement à la prochaine ouverture de la fiche.
+- **Rappel exploitation :** redémarrer `server.js` après tout déploiement —
+  un serveur resté sur l'ancien code mémorise `deezer_id` sans l'extrait.
+
 ## Notation d'album (GD-00003) — implémentation 2026-09-10
 
 Source de référence : `PRODUCT_SPEC_NOTATION_ALBUM.md` (toutes règles `VALIDATED`).
