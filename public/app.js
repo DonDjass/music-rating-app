@@ -48,7 +48,7 @@ const albumActions = el("album-actions");
 const rateAlbumBtn = el("rate-album-btn");
 const rateTracksBtn = el("rate-tracks-btn");
 
-const albumNotation = el("album-notation");
+const albumNotationEl = el("album-notation");
 const albumNoteTracks = el("album-note-tracks");
 const albumNoteFeeling = el("album-note-feeling");
 const albumNoteCriteria = el("album-note-criteria");
@@ -192,7 +192,7 @@ function makePopup(popupEl, textEl, anchorEl) {
   return { show, hide };
 }
 
-const albumPopupCtl = makePopup(albumPopup, albumPopupText, albumNotation);
+const albumPopupCtl = makePopup(albumPopup, albumPopupText, albumNotationEl);
 const artistPopupCtl = makePopup(artistPopup, artistPopupText, artistNotation);
 const showAlbumPopup = albumPopupCtl.show;
 const hideAlbumPopup = albumPopupCtl.hide;
@@ -592,11 +592,13 @@ albumLikeBtn.addEventListener("click", async () => {
   }
 });
 
-// "Noter l'album" : pas encore développé — bouton visuellement désactivé,
-// message explicite pour ne pas passer pour un bug.
+// "Noter l'album" : ouvre l'écran de notation dédié (feeling + critères).
+// La tracklist est masquée jusqu'à ce que l'utilisateur clique « Retour ».
 rateAlbumBtn.addEventListener("click", () => {
-  showAlbumPopup("La notation d'album n'est pas encore disponible.");
+  enterAlbumRatingMode();
 });
+
+el("album-rating-back").addEventListener("click", exitAlbumRatingMode);
 
 // "Noter les morceaux" : ouvre la fiche du 1er morceau de la tracklist en
 // réutilisant l'écran de notation de morceau (avec contexte album pour
@@ -1126,44 +1128,522 @@ function albumNoteText(n) {
   return n == null ? "—/10" : `${n.toFixed(1).replace(".", ",")}/10`;
 }
 
-function setAlbumNote(elm, value) {
+// value: nombre ou null ; state (optionnel) : "none" | "partial" | "complete"
+// pour la pastille de complétude ; counted (optionnel) : false => valeur
+// grise "à titre informatif" (ne compte pas dans la NOTE GLOBALE).
+function setAlbumNote(elm, value, state, counted = true) {
   elm.textContent = albumNoteText(value);
   elm.classList.toggle("has-value", value != null);
+  elm.classList.toggle("not-counted", value != null && counted === false);
+  elm.classList.toggle("with-state", !!state);
+  elm.classList.toggle("state-none", state === "none");
+  elm.classList.toggle("state-partial", state === "partial");
+  elm.classList.toggle("state-complete", state === "complete");
 }
 
-// Notation morceaux = moyenne des NOTE GLOBALE des morceaux déjà notés
-// (globalRating != null <=> feeling ou critères renseigné, cf. serveur).
-// feeling / critères album : pas encore développés -> null.
-// Note globale album = moyenne des 3, en excluant les non renseignées.
+// Utilisé par la vue ARTISTE seulement (notation artiste non développée :
+// feeling/critères artiste = placeholders). L'album a sa propre mécanique.
 function computeAlbumNotes(tracks) {
   const tracksNote = mean1(tracks.map((t) => t.globalRating));
-  const feelingNote = null;
-  const criteriaNote = null;
-  const globalNote = mean1([tracksNote, feelingNote, criteriaNote]);
-  return { tracks: tracksNote, feeling: feelingNote, criteria: criteriaNote, global: globalNote };
+  const globalNote = mean1([tracksNote, null, null]);
+  return { tracks: tracksNote, feeling: null, criteria: null, global: globalNote };
 }
 
-function renderAlbumNotation(tracks) {
-  const notes = computeAlbumNotes(tracks);
-  setAlbumNote(albumNoteTracks, notes.tracks);
-  setAlbumNote(albumNoteFeeling, notes.feeling);
-  setAlbumNote(albumNoteCriteria, notes.criteria);
-  setAlbumNote(albumNoteGlobal, notes.global);
-}
+// ===================================================================
+// --- Notation d'un ALBUM (GD-00003) ---
+// ===================================================================
 
-const ALBUM_NOTE_HELP = {
-  "album-note-tracks": "Moyenne des notes de tous les morceaux de cet album que tu as déjà notés.",
-  "album-note-feeling": "Ta note instinctive pour l'album dans son ensemble — bientôt disponible.",
-  "album-note-criteria": "Ta note calculée sur les critères de l'album — bientôt disponible.",
-  "album-note-global": "Moyenne de tes notes disponibles pour cet album (morceaux, feeling, critères).",
+const ALBUM_CRITERIA = ["performance", "texte", "production", "coherence", "creativite"];
+const ALBUM_INHERITABLE = ["performance", "texte", "production"];
+const ALBUM_CRIT_LABEL = {
+  performance: "Performance",
+  texte: "Texte",
+  production: "Production",
+  coherence: "Cohérence",
+  creativite: "Créativité",
 };
 
-for (const [id, msg] of Object.entries(ALBUM_NOTE_HELP)) {
-  el(id).addEventListener("click", () => showAlbumPopup(msg));
+const albumRatingCard = el("album-rating-card");
+
+const albumFeelingBlock = el("album-feeling-block");
+const albumFeelingToggle = el("album-feeling-toggle");
+const albumFeelingSlider = el("album-feeling-slider");
+const albumFeelingValueEl = el("album-feeling-value");
+const albumFeelingActions = el("album-feeling-actions");
+
+const albumCriteriaBlock = el("album-criteria-block");
+const albumCriteriaToggle = el("album-criteria-toggle");
+const albumCriteriaSlider = el("album-criteria-slider");
+const albumCriteriaValueEl = el("album-criteria-value");
+const albumCriteriaActions = el("album-criteria-actions");
+const albumCriteriaBreakdown = el("album-criteria-breakdown");
+const albumInheritBtn = el("album-inherit-btn");
+
+const albumMorceauxRow = el("album-morceaux-row");
+const albumMorceauxCheck = el("album-morceaux-check");
+const albumMorceauxNote = el("album-morceaux-note");
+
+// Lignes de critères (une par nom) : { line, slider, valueEl, revertBtn? }
+const albumCritLines = {};
+for (const line of albumCriteriaBreakdown.querySelectorAll(".criteria-line")) {
+  const name = line.dataset.crit;
+  albumCritLines[name] = {
+    line,
+    slider: line.querySelector(".mini-slider"),
+    valueEl: line.querySelector(".criteria-value"),
+    revertBtn: line.querySelector(".crit-revert"),
+  };
 }
 
-// "Classic" album : affichage seul pour l'instant (pas de support serveur).
+let albumNotation = null; // dernier état serveur pour l'album courant
+let albumEditing = null; // 'feeling' | 'criteria' | null
+let albumFeelingDraft = null; // nombre ou null
+let albumCriteriaDraft = null; // { <nom>: { value: number|null, manual: bool } }
+let albumCardForced = false; // "Noter l'album" a déjà révélé la carte
+
+function albumApiBase() {
+  return `/api/albums/${encodeURIComponent(currentAlbum.mbid)}`;
+}
+
+function albumTotalCount() {
+  return currentAlbumTracks.length || null;
+}
+
+function albumSaveMeta() {
+  return currentAlbum
+    ? { title: currentAlbum.title, album: currentAlbum.title, artist: currentAlbum.artist, date: currentAlbum.year }
+    : {};
+}
+
+async function loadAlbumNotation() {
+  if (!currentAlbum || !currentAlbum.mbid) return;
+  const forMbid = currentAlbum.mbid;
+  const total = albumTotalCount();
+  const qs = total != null ? `?total=${total}` : "";
+  let data = null;
+  try {
+    data = await api(`${albumApiBase()}/notation${qs}`, "GET");
+  } catch (err) {
+    data = null;
+  }
+  // Ignore une réponse arrivée après un changement d'album.
+  if (!currentAlbum || currentAlbum.mbid !== forMbid) return;
+  albumNotation = data;
+  albumEditing = null;
+  renderAlbumNotation();
+}
+
+// --- Ligne "MA NOTATION" (sticky) : 4 notes + pastilles de complétude ---
+
+function renderAlbumNotationLine() {
+  const n = albumNotation;
+  if (!n) {
+    setAlbumNote(albumNoteTracks, null, "none");
+    setAlbumNote(albumNoteFeeling, null, "none");
+    setAlbumNote(albumNoteCriteria, null, "none");
+    setAlbumNote(albumNoteGlobal, null);
+    return;
+  }
+  setAlbumNote(albumNoteTracks, n.morceaux.mean, n.morceaux.completeness, n.morceaux.participates);
+  setAlbumNote(albumNoteFeeling, n.feeling, n.feelingComplete ? "complete" : "none");
+  setAlbumNote(albumNoteCriteria, n.criteriaRating, n.criteriaCompleteness);
+  setAlbumNote(albumNoteGlobal, n.global);
+}
+
+function pct(x) {
+  return `${Math.round(x * 100)}%`;
+}
+
+function albumNoteDetail(kind) {
+  const n = albumNotation;
+  if (!n) return "Chargement…";
+  const m = n.morceaux;
+  if (kind === "tracks") {
+    if (m.mean == null) return "Aucun morceau de cet album n'est encore noté.";
+    let base = `${m.ratedCount} morceau${m.ratedCount > 1 ? "x" : ""} noté${m.ratedCount > 1 ? "s" : ""}`;
+    if (m.totalCount != null) base += ` sur ${m.totalCount} — couverture ${pct(m.coverage)}`;
+    base += ` (moyenne ${formatNum(m.mean)}).`;
+    if (!m.eligible) return `${base} En dessous de 70 % de couverture, cette note n'entre pas dans la NOTE GLOBALE.`;
+    if (!m.included) return `${base} Tu as choisi de ne pas la compter dans la NOTE GLOBALE.`;
+    return `${base} Poids dans la NOTE GLOBALE : ${pct((1 / 3) * m.coverage)}.`;
+  }
+  if (kind === "feeling") {
+    return n.feeling == null
+      ? "Ta note instinctive pour l'album — pas encore renseignée. Ouvre « AU FEELING » pour la saisir."
+      : `Ta note au feeling pour l'album : ${formatNum(n.feeling)}/10.`;
+  }
+  if (kind === "criteria") {
+    if (!n.criteriaSetCount) return "Ta note par critères de l'album — pas encore renseignée.";
+    const parts = ALBUM_CRITERIA.filter((c) => n.criteria[c]).map(
+      (c) => `${ALBUM_CRIT_LABEL[c]} ${formatNum(n.criteria[c].value)}`
+    );
+    return `${n.criteriaSetCount}/5 critères : ${parts.join(" · ")} → moyenne ${formatNum(n.criteriaRating)}/10.`;
+  }
+  if (kind === "global") {
+    if (n.global == null)
+      return "NOTE GLOBALE : renseigne au moins une composante (feeling, critères, ou 70 % des morceaux notés).";
+    const comps = [];
+    if (m.participates) comps.push("morceaux");
+    if (n.feeling != null) comps.push("feeling");
+    if (n.criteriaRating != null) comps.push("critères");
+    return `NOTE GLOBALE ${formatNum(n.global)}/10 — moyenne${
+      m.participates ? " pondérée" : ""
+    } de : ${comps.join(", ")}.`;
+  }
+  return "";
+}
+
+const ALBUM_NOTE_KIND = {
+  "album-note-tracks": "tracks",
+  "album-note-feeling": "feeling",
+  "album-note-criteria": "criteria",
+  "album-note-global": "global",
+};
+for (const [id, kind] of Object.entries(ALBUM_NOTE_KIND)) {
+  el(id).addEventListener("click", () => showAlbumPopup(albumNoteDetail(kind)));
+}
+
+// "Classic" album : emplacement prévu, non développé (cf. spec).
 el("album-classic-btn").addEventListener("click", () => showAlbumPopup("Bientôt disponible."));
+
+// --- Écran de notation d'album (feeling + critères + toggle MORCEAUX) ---
+// `albumCardForced` = on est sur l'écran de notation dédié : la carte est
+// visible et la tracklist masquée jusqu'au clic sur « Retour ».
+
+function enterAlbumRatingMode() {
+  albumCardForced = true;
+  renderAlbumNotation();
+  if (albumEditing === null && (!albumNotation || albumNotation.feeling == null)) {
+    openAlbumFeelingEdit();
+  }
+  albumRatingCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function exitAlbumRatingMode() {
+  albumEditing = null; // abandonne une édition en cours
+  albumCardForced = false;
+  renderAlbumNotation();
+  albumSticky.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderAlbumNotation() {
+  renderAlbumNotationLine();
+
+  const show = albumCardForced;
+  albumRatingCard.hidden = !show;
+  // Écran de notation : on masque la tracklist et les boutons d'action.
+  drilldownResults.hidden = show;
+  albumActions.hidden = show;
+  if (show) drilldownStatus.hidden = true;
+
+  if (show) {
+    renderAlbumFeeling();
+    renderAlbumCriteria();
+    renderAlbumMorceauxToggle();
+  }
+}
+
+// Valeur "retenue" côté serveur pour un critère (ou null).
+function savedCritValue(name) {
+  const c = albumNotation && albumNotation.criteria[name];
+  return c ? c.value : null;
+}
+function savedCritManual(name) {
+  const c = albumNotation && albumNotation.criteria[name];
+  return !!(c && c.manual);
+}
+function trackMean(name) {
+  return (albumNotation && albumNotation.trackCritMeans[name]) ?? null;
+}
+
+// ----- NOTE AU FEELING ALBUM -----
+
+function renderAlbumFeeling() {
+  const isEditing = albumEditing === "feeling";
+  albumFeelingBlock.classList.toggle("editing", isEditing);
+  albumFeelingBlock.classList.toggle("inactive", albumEditing === "criteria");
+  albumFeelingToggle.classList.toggle("active", isEditing);
+  albumFeelingActions.hidden = !isEditing;
+  albumFeelingSlider.disabled = !isEditing;
+
+  const saved = albumNotation ? albumNotation.feeling : null;
+  const shown = isEditing ? albumFeelingDraft : saved;
+  albumFeelingValueEl.textContent = formatNum(shown);
+  // En édition, on ne réassigne pas .value du slider en cours de drag
+  // (cf. GAPS §11bis) — sa position est posée à l'ouverture / au reset.
+  if (!isEditing) setSlider(albumFeelingSlider, shown ?? 0);
+
+  if (isEditing) {
+    const resetBtn = albumFeelingActions.querySelector('[data-action="reset"]');
+    const saveBtn = albumFeelingActions.querySelector('[data-action="save"]');
+    resetBtn.disabled = albumFeelingDraft == null;
+    saveBtn.disabled = albumFeelingDraft == null || albumFeelingDraft === saved;
+  }
+}
+
+function openAlbumFeelingEdit() {
+  if (albumEditing === "criteria") closeAlbumCriteriaEdit();
+  albumEditing = "feeling";
+  albumFeelingDraft = albumNotation ? albumNotation.feeling : null;
+  setSlider(albumFeelingSlider, albumFeelingDraft ?? 0);
+  renderAlbumNotation();
+}
+
+function closeAlbumFeelingEdit() {
+  if (albumEditing === "feeling") albumEditing = null;
+  renderAlbumNotation();
+}
+
+albumFeelingToggle.addEventListener("click", () => {
+  if (albumEditing !== "feeling") openAlbumFeelingEdit();
+});
+
+albumFeelingSlider.addEventListener("input", () => {
+  albumFeelingDraft = Number(albumFeelingSlider.value);
+  setSliderFill(albumFeelingSlider, albumFeelingDraft);
+  renderAlbumFeeling();
+});
+
+albumFeelingActions.addEventListener("click", async (e) => {
+  const action = e.target.dataset.action;
+  if (!action) return;
+  if (action === "reset") {
+    albumFeelingDraft = null;
+    setSlider(albumFeelingSlider, 0);
+    renderAlbumFeeling();
+  } else if (action === "cancel") {
+    closeAlbumFeelingEdit();
+  } else if (action === "save") {
+    if (albumFeelingDraft == null) return;
+    try {
+      albumNotation = await api(`${albumApiBase()}/feeling`, "PUT", {
+        value: albumFeelingDraft,
+        total: albumTotalCount(),
+        meta: albumSaveMeta(),
+      });
+      albumEditing = null;
+      renderAlbumNotation();
+    } catch (err) {
+      showToast("Impossible d'enregistrer. Réessaie.");
+    }
+  }
+});
+
+// ----- NOTE PAR CRITÈRES ALBUM -----
+
+function albumCriteriaDraftAvg() {
+  return mean1(ALBUM_CRITERIA.map((n) => albumCriteriaDraft[n].value));
+}
+
+function albumDraftHasAnyValue() {
+  return ALBUM_CRITERIA.some((n) => albumCriteriaDraft[n].value != null);
+}
+
+function albumDraftEqualsSaved() {
+  return ALBUM_CRITERIA.every((n) => {
+    const d = albumCriteriaDraft[n];
+    if (d.value !== savedCritValue(n)) return false;
+    // Un critère renseigné dont on a changé le statut hérité/manuel compte
+    // comme une modification (impacte la resynchro future).
+    if (d.value != null && d.manual !== savedCritManual(n)) return false;
+    return true;
+  });
+}
+
+function renderAlbumCriteria() {
+  const isEditing = albumEditing === "criteria";
+  albumCriteriaBlock.classList.toggle("editing", isEditing);
+  albumCriteriaBlock.classList.toggle("inactive", albumEditing === "feeling");
+  albumCriteriaToggle.classList.toggle("active", isEditing);
+  albumCriteriaActions.hidden = !isEditing;
+  albumInheritBtn.hidden = !isEditing;
+
+  const src = (name) => (isEditing ? albumCriteriaDraft[name].value : savedCritValue(name));
+
+  for (const name of ALBUM_CRITERIA) {
+    const { slider, valueEl, revertBtn } = albumCritLines[name];
+    const v = src(name);
+    slider.disabled = !isEditing;
+    valueEl.textContent = formatNum(v);
+    // En édition : position posée par syncAlbumCriteriaSliders() (ouverture,
+    // reset, inherit, revert) — pas ici, pour ne pas perturber un drag.
+    if (!isEditing) setSlider(slider, v ?? 0);
+    slider.classList.toggle("unset", isEditing && v == null);
+
+    if (revertBtn) {
+      // "Revenir à la valeur calculée" : critère hérité ajusté à la main,
+      // et une moyenne morceaux existe pour ce critère.
+      const showRevert =
+        isEditing &&
+        ALBUM_INHERITABLE.includes(name) &&
+        albumCriteriaDraft[name].manual &&
+        albumCriteriaDraft[name].value != null &&
+        trackMean(name) != null;
+      revertBtn.hidden = !showRevert;
+    }
+  }
+
+  // Bouton "Calculer depuis les morceaux" : dispo si au moins un des 3
+  // critères héritables a une moyenne morceaux.
+  const anyTrackMean = ALBUM_INHERITABLE.some((n) => trackMean(n) != null);
+  albumInheritBtn.disabled = !anyTrackMean;
+  albumInheritBtn.title = anyTrackMean
+    ? ""
+    : "Aucun morceau de l'album n'a de note Performance / Texte / Production.";
+
+  const liveAvg = isEditing ? albumCriteriaDraftAvg() : (albumNotation ? albumNotation.criteriaRating : null);
+  albumCriteriaValueEl.textContent = formatNum(liveAvg);
+  setSlider(albumCriteriaSlider, liveAvg ?? 0);
+
+  if (isEditing) {
+    const resetBtn = albumCriteriaActions.querySelector('[data-action="reset"]');
+    const saveBtn = albumCriteriaActions.querySelector('[data-action="save"]');
+    // RÉINITIALISER remet toute la NOTE PAR CRITÈRES à vide : disponible dès
+    // qu'au moins un critère a une valeur (héritée, manuelle ou mélange).
+    resetBtn.disabled = !albumDraftHasAnyValue();
+    // ENREGISTRER : dès que le brouillon diffère du dernier état enregistré
+    // (y compris pour enregistrer un état entièrement vide après RÉINITIALISER).
+    saveBtn.disabled = albumDraftEqualsSaved();
+  }
+}
+
+function freshAlbumCriteriaDraft() {
+  const d = {};
+  for (const name of ALBUM_CRITERIA) {
+    d[name] = { value: savedCritValue(name), manual: savedCritManual(name) };
+  }
+  return d;
+}
+
+function syncAlbumCriteriaSliders() {
+  for (const name of ALBUM_CRITERIA) {
+    setSlider(albumCritLines[name].slider, albumCriteriaDraft[name].value ?? 0);
+  }
+}
+
+function openAlbumCriteriaEdit() {
+  if (albumEditing === "feeling") closeAlbumFeelingEdit();
+  albumEditing = "criteria";
+  albumCriteriaDraft = freshAlbumCriteriaDraft();
+  syncAlbumCriteriaSliders();
+  renderAlbumNotation();
+}
+
+function closeAlbumCriteriaEdit() {
+  if (albumEditing === "criteria") albumEditing = null;
+  renderAlbumNotation();
+}
+
+albumCriteriaToggle.addEventListener("click", () => {
+  if (albumEditing !== "criteria") openAlbumCriteriaEdit();
+});
+
+for (const name of ALBUM_CRITERIA) {
+  const { slider, revertBtn } = albumCritLines[name];
+  slider.addEventListener("input", () => {
+    albumCriteriaDraft[name] = { value: Number(slider.value), manual: true };
+    setSliderFill(slider, albumCriteriaDraft[name].value);
+    renderAlbumCriteria();
+  });
+  if (revertBtn) {
+    revertBtn.addEventListener("click", () => {
+      const m = trackMean(name);
+      if (m == null) return;
+      albumCriteriaDraft[name] = { value: m, manual: false };
+      setSlider(slider, m);
+      renderAlbumCriteria();
+    });
+  }
+}
+
+albumInheritBtn.addEventListener("click", () => {
+  const targets = ALBUM_INHERITABLE.filter((n) => trackMean(n) != null);
+  if (!targets.length) return;
+
+  const clash = targets.filter(
+    (n) => albumCriteriaDraft[n].manual && albumCriteriaDraft[n].value != null
+  );
+  if (clash.length) {
+    const names = clash.map((n) => ALBUM_CRIT_LABEL[n]).join(", ");
+    if (!confirm(`Remplacer tes valeurs manuelles (${names}) par la moyenne de tes morceaux ?`)) {
+      return;
+    }
+  }
+  for (const n of targets) {
+    albumCriteriaDraft[n] = { value: trackMean(n), manual: false };
+  }
+  syncAlbumCriteriaSliders();
+  renderAlbumCriteria();
+});
+
+albumCriteriaActions.addEventListener("click", async (e) => {
+  const action = e.target.dataset.action;
+  if (!action) return;
+
+  if (action === "reset") {
+    // Remet TOUTE la NOTE PAR CRITÈRES à vide (les 5 critères), y compris les
+    // valeurs héritées — qui ne doivent pas réapparaître automatiquement.
+    // Reste en édition, aucune sauvegarde immédiate.
+    for (const name of ALBUM_CRITERIA) {
+      albumCriteriaDraft[name] = { value: null, manual: false };
+    }
+    syncAlbumCriteriaSliders();
+    renderAlbumCriteria();
+  } else if (action === "cancel") {
+    closeAlbumCriteriaEdit();
+  } else if (action === "save") {
+    if (albumDraftEqualsSaved()) return;
+    const criteria = {};
+    for (const name of ALBUM_CRITERIA) {
+      const { value, manual } = albumCriteriaDraft[name];
+      if (value != null) criteria[name] = { value, manual };
+    }
+    try {
+      albumNotation = await api(`${albumApiBase()}/criteria`, "PUT", {
+        criteria,
+        total: albumTotalCount(),
+        meta: albumSaveMeta(),
+      });
+      albumEditing = null;
+      renderAlbumNotation();
+    } catch (err) {
+      showToast("Impossible d'enregistrer les critères. Réessaie.");
+    }
+  }
+});
+
+// ----- Toggle MORCEAUX -----
+
+function renderAlbumMorceauxToggle() {
+  const m = albumNotation ? albumNotation.morceaux : null;
+  const show = !!(m && m.eligible);
+  albumMorceauxRow.hidden = !show;
+  if (!show) return;
+
+  albumMorceauxCheck.checked = m.included;
+  albumMorceauxRow.classList.remove("is-locked");
+  albumMorceauxCheck.disabled = false;
+  albumMorceauxNote.textContent = m.included
+    ? `${m.ratedCount}/${m.totalCount} morceaux notés — couverture ${pct(m.coverage)}. Poids ${pct(
+        (1 / 3) * m.coverage
+      )} dans la NOTE GLOBALE.`
+    : "Exclue de la NOTE GLOBALE par ton choix.";
+}
+
+albumMorceauxCheck.addEventListener("change", async () => {
+  const value = albumMorceauxCheck.checked;
+  try {
+    albumNotation = await api(`${albumApiBase()}/morceaux`, "PUT", {
+      value,
+      total: albumTotalCount(),
+      meta: albumSaveMeta(),
+    });
+    renderAlbumNotation();
+  } catch (err) {
+    albumMorceauxCheck.checked = !value;
+    showToast("Impossible de modifier ce réglage. Réessaie.");
+  }
+});
 
 async function openAlbum(album) {
   // Mode "album" : en-tête riche (pochette + méta + actions), pas le titre simple.
@@ -1182,7 +1662,10 @@ async function openAlbum(album) {
   albumYearEl.hidden = true;
   setCoverArt(albumCoverArt, null);
   renderAlbumLike(false);
-  renderAlbumNotation([]);
+  albumNotation = null;
+  albumEditing = null;
+  albumCardForced = false;
+  renderAlbumNotation();
   rateTracksBtn.disabled = true;
   drilldownResults.className = "search-results";
   drilldownResults.innerHTML = "";
@@ -1216,7 +1699,7 @@ async function openAlbum(album) {
     albumYearEl.textContent = year || "";
     albumYearEl.hidden = !year;
     renderAlbumLike(data.isLiked);
-    renderAlbumNotation(tracks);
+    loadAlbumNotation();
     rateTracksBtn.disabled = tracks.length === 0;
     loadCoverInto(albumCoverArt, {
       releaseMbid: currentAlbum.mbid || "",

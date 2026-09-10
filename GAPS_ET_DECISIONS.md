@@ -42,6 +42,112 @@ entrées sont donc désormais de l'historique, pas la cible.
 
 ---
 
+## Notation d'album (GD-00003) — implémentation 2026-09-10
+
+Source de référence : `PRODUCT_SPEC_NOTATION_ALBUM.md` (toutes règles `VALIDATED`).
+Remplace la version placeholder (4 notes en lecture seule). Choix faits :
+
+### 1. Modèle de données — migration incrémentale (confirmé par l'utilisateur)
+- Ajout `entity_type` (`track`/`album`/`artist`, défaut `track`) sur `ratings`
+  + table `rating_criteria` (clé/valeur, `is_manual`). **Utilisés pour l'ALBUM
+  uniquement.** Les critères MORCEAU restent sur leurs colonnes fixes
+  (`crit_performance`…) — migration complète repoussée.
+- Toutes les requêtes track-centrées (`/api/home`, `/api/my-ratings`, page
+  artiste) filtrées `entity_type = 'track'` pour ne pas mélanger les lignes
+  album.
+- Ligne album = une ligne `ratings` keyée sur le **mbid de la release**,
+  `entity_type='album'`. Une ancienne ligne « J'aime album » (typée `track`
+  avant migration) est convertie au premier enregistrement de notation.
+
+### 2. Couverture — `album_track_count` mémorisé sur la ligne album
+Le nombre total de morceaux vient de la tracklist MusicBrainz (pas en base).
+Il est transmis par le client (`?total=` / champ `total`) et stocké sur la
+ligne album, pour que le **recalcul automatique côté serveur** (déclenché par
+une modif de morceau) puisse recalculer la couverture sans appel MB.
+- **Limite v1 :** seuls les morceaux ouverts via la tracklist de l'album
+  portent le lien `release_mbid` ; un morceau noté via la recherche directe
+  ne compte pas dans la couverture / la moyenne MORCEAUX. Même limite que
+  `buildAlbumContextFor` (Précédent/Suivant).
+
+### 3. « Calculer depuis les morceaux » = opération de brouillon (pas d'API)
+Les moyennes Performance/Texte/Production des morceaux sont renvoyées par
+`GET …/notation` (`trackCritMeans`). Le bouton et le bouton « revenir à la
+valeur calculée » agissent sur le brouillon client ; **rien n'est persisté
+tant que l'utilisateur n'a pas cliqué Enregistrer** (cohérent avec l'écran
+morceau). La confirmation avant d'écraser des valeurs manuelles est un
+`confirm()` client.
+
+### 4. Synchronisation des valeurs héritées
+Un critère P/T/P avec `is_manual = 0` est resynchronisé sur la moyenne des
+morceaux à chaque `recomputeAlbum` (modif de morceau, toggle, enregistrement
+feeling/critères, mise à jour de `album_track_count`). `GET …/notation` ne
+resynchronise pas en base mais renvoie toujours `trackCritMeans` frais.
+
+### 5. Toggle MORCEAUX — préférence conservée en travers des changements de couverture
+`morceaux_included` : NULL = défaut (compté dès éligible), 0/1 = choix explicite.
+Si la couverture repasse sous 70 %, MORCEAUX est exclu du calcul mais la
+**préférence 0/1 est conservée** (pas de retour au défaut). La ligne du toggle
+n'est affichée que lorsque MORCEAUX est **éligible** (≥ 70 %) ; en dessous, la
+moyenne reste visible « à titre informatif » sur la ligne MA NOTATION (grise)
+et dans son pop-up de détail.
+
+### 6. « Revenir à la valeur calculée » — en mode édition uniquement
+Le spec ne précise pas le mode. Placé dans l'édition des critères (comme tout
+ajustement de critère), affiché sous le critère concerné quand il est hérité,
+ajusté manuellement, et qu'une moyenne morceaux existe.
+
+### 7. Pas de suppression explicite de la NOTE AU FEELING album depuis l'UI
+Cohérent avec SPEC_UPDATES A2 (suppression retirée de l'UI côté morceau).
+La route `DELETE …/feeling` existe côté serveur mais n'est pas appelée.
+
+### 7bis. RÉINITIALISER de la NOTE PAR CRITÈRES album — ÉCART ASSUMÉ vs. spec (demande explicite 2026-09-10)
+
+**Nouvelle règle demandée :** RÉINITIALISER vide **toute** la NOTE PAR CRITÈRES
+album (les 5 critères), y compris les valeurs héritées P/T/P — qui **ne
+réapparaissent pas** automatiquement. Disponible dès qu'au moins un critère a
+une valeur (héritée, manuelle ou mélange) ; désactivé si tout est vide. Reste
+en édition, pas de sauvegarde immédiate. ENREGISTRER derrière → l'état vide
+devient le nouvel état enregistré. ABANDONNER → dernier état enregistré.
+« ↻ valeur calculée » (individuel) et le toggle MORCEAUX **inchangés**.
+
+**Contredit `PRODUCT_SPEC_NOTATION_ALBUM.md` (règles `VALIDATED`) :**
+- « BUSINESS RULE — Réinitialisation avec valeurs héritées » + « SCENARIO —
+  Réinitialisation de critères Album comportant des interventions manuelles » :
+  le spec dit que RÉINITIALISER **restaure les valeurs héritées disponibles**
+  (P/T/P) — la nouvelle règle les vide et ne les restaure pas.
+- « BUSINESS RULE — Disponibilité de RÉINITIALISER » + « BUSINESS RULE —
+  RÉINITIALISER indisponible à l'état de référence » : le spec dit dispo
+  **uniquement si une saisie/modif manuelle peut être annulée**, indispo si
+  « uniquement des valeurs héritées non ajustées » — la nouvelle règle
+  l'active dès qu'une valeur (même purement héritée) existe.
+- « BUSINESS RULE — Critères partiels » + « SCENARIO — Attribution initiale »
+  (« au moins un critère renseigné » pour enregistrer) : `PUT …/criteria`
+  accepte désormais `criteria: {}` (remise à « non renseigné »). Le spec n'a
+  aucun scénario pour vider une NOTE PAR CRITÈRES album.
+
+À reporter dans `SPEC_UPDATES_PROPOSEES.md` (Partie A — modif d'exigences
+existantes) pour arbitrage TRS. En attendant, l'implémentation suit la
+demande explicite du 2026-09-10.
+
+### 8. Complétude — pastille sur la ligne MA NOTATION
+
+### 8. Complétude — pastille sur la ligne MA NOTATION
+Petite pastille ronde devant MORCEAUX / FEELING / CRITÈRES : contour gris =
+non renseigné, demi-dorée = partiel, pleine dorée = complet. La NOTE GLOBALE
+n'en porte pas (résultat, pas une composante). « Détail à la demande » =
+pop-up persistant existant (`albumPopupCtl`), pas de toast.
+
+### 9. Statut « Classic » album — toujours non développé
+Emplacement affiché, « Bientôt disponible » au clic (inchangé).
+
+### À VALIDER a posteriori
+- Sens du toggle conservé vs. « activé par défaut à chaque passage éligible ».
+- Emplacement de « revenir à la valeur calculée » (édition).
+- Affichage du toggle uniquement si éligible (spec littérale) vs. visible+grisé
+  en dessous de 70 %.
+
+---
+
 ## Swipe tactile pour Précédent/Suivant (hors spec)
 
 Ajouté à la demande de l'utilisateur, en plus des boutons. Choix faits

@@ -52,12 +52,45 @@ const NEW_COLUMNS = {
   release_mbid: "TEXT",
 };
 
+// Colonnes ajoutées pour la notation d'album (GD-00003) :
+//  - entity_type : 'track' | 'album' | 'artist' — première étape vers le
+//    modèle générique acté dans GAPS_ET_DECISIONS.md (migration partielle :
+//    seuls les critères ALBUM passent par rating_criteria ; les critères
+//    MORCEAU restent sur leurs colonnes fixes pour l'instant).
+//  - album_track_count : nombre total de morceaux de l'album (source
+//    MusicBrainz, pas en base) — nécessaire pour calculer la couverture,
+//    y compris lors d'un recalcul automatique déclenché côté serveur.
+//  - morceaux_included : préférence utilisateur du toggle « Prendre en
+//    compte mes notes des morceaux ». NULL = défaut (compté dès éligible) ;
+//    0 = exclu par choix ; 1 = inclus par choix.
+const NEW_COLUMNS_2 = {
+  entity_type: "TEXT NOT NULL DEFAULT 'track'",
+  album_track_count: "INTEGER",
+  morceaux_included: "INTEGER",
+};
+
 const existingColumns = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
-for (const [name, type] of Object.entries(NEW_COLUMNS)) {
+for (const [name, type] of Object.entries({ ...NEW_COLUMNS, ...NEW_COLUMNS_2 })) {
   if (!existingColumns.includes(name)) {
     db.exec(`ALTER TABLE ratings ADD COLUMN ${name} ${type}`);
   }
 }
+
+// Évaluation par critères d'une notation (album pour l'instant ; morceau plus
+// tard). Une ligne par critère : le nombre et la nature varient selon le
+// niveau. `is_manual` = 1 dès que l'utilisateur saisit/ajuste la valeur à la
+// main → la synchronisation automatique avec la moyenne des morceaux s'arrête
+// pour ce critère (cf. PRODUCT_SPEC_NOTATION_ALBUM.md).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS rating_criteria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rating_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    value REAL,
+    is_manual INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (rating_id, name)
+  )
+`);
 
 // Historique des recherches — stockage local simple, sans notion d'utilisateur.
 // Une seule ligne par requête distincte (la ré-insertion la remonte en tête).
@@ -264,6 +297,7 @@ async function getArtistPage(mbid) {
       `SELECT album, AVG(global_rating) AS note
          FROM ratings
         WHERE artist = ? COLLATE NOCASE AND global_rating IS NOT NULL
+          AND entity_type = 'track'
         GROUP BY album COLLATE NOCASE`
     )
     .all(name);
@@ -286,6 +320,7 @@ async function getArtistPage(mbid) {
     .prepare(
       `SELECT * FROM ratings
         WHERE artist = ? COLLATE NOCASE AND global_rating IS NOT NULL
+          AND entity_type = 'track'
         ORDER BY global_rating DESC, created_at DESC`
     )
     .all(name)
@@ -370,6 +405,246 @@ function serializeRow(row) {
     isClassic: !!row.is_classic,
     isLiked: !!row.is_liked,
     releaseMbid: row.release_mbid,
+  };
+}
+
+// ===================================================================
+// --- Notation d'un ALBUM (GD-00003 / PRODUCT_SPEC_NOTATION_ALBUM.md) ---
+// ===================================================================
+
+// Les 5 critères Album. Seuls Performance / Texte / Production peuvent être
+// hérités des morceaux ; Cohérence et Créativité sont propres à l'album.
+const ALBUM_CRITERIA = ["performance", "texte", "production", "coherence", "creativite"];
+const ALBUM_INHERITABLE = ["performance", "texte", "production"];
+const TRACK_CRIT_COLUMN = {
+  performance: "crit_performance",
+  texte: "crit_texte",
+  production: "crit_production",
+};
+const COVERAGE_THRESHOLD = 0.7; // seuil d'éligibilité MORCEAUX
+
+// Ligne `ratings` d'un album, identifiée par le mbid de la release.
+function getAlbumRow(releaseMbid) {
+  return db
+    .prepare(`SELECT * FROM ratings WHERE mbid = ? AND entity_type = 'album'`)
+    .get(releaseMbid);
+}
+
+// Récupère (ou crée) la ligne d'album. Une ancienne ligne « J'aime album »
+// (créée avant l'ajout d'entity_type, donc typée 'track') est convertie.
+function getOrCreateAlbumRow(releaseMbid, meta = {}) {
+  let row = db.prepare(`SELECT * FROM ratings WHERE mbid = ?`).get(releaseMbid);
+
+  if (row && row.entity_type !== "album") {
+    db.prepare(`UPDATE ratings SET entity_type = 'album' WHERE id = ?`).run(row.id);
+    row = db.prepare(`SELECT * FROM ratings WHERE id = ?`).get(row.id);
+  }
+
+  if (!row) {
+    const info = db
+      .prepare(
+        `INSERT INTO ratings (mbid, entity_type, album, artist, track_title, release_date, release_mbid)
+         VALUES (?, 'album', ?, ?, ?, ?, ?)`
+      )
+      .run(
+        releaseMbid,
+        meta.album || meta.title || "Album inconnu",
+        meta.artist || "Artiste inconnu",
+        meta.title || meta.album || null,
+        meta.date || null,
+        releaseMbid
+      );
+    row = db.prepare(`SELECT * FROM ratings WHERE id = ?`).get(info.lastInsertRowid);
+  }
+
+  return row;
+}
+
+function mean1(values) {
+  const vals = values.filter((v) => v != null);
+  if (!vals.length) return null;
+  return round1(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
+// Stats dérivées des morceaux de l'album (identifiés par release_mbid ; seuls
+// les morceaux ouverts via la tracklist portent ce lien — limite v1).
+function albumTrackStats(releaseMbid) {
+  const rows = db
+    .prepare(
+      `SELECT crit_performance, crit_texte, crit_production, global_rating
+         FROM ratings
+        WHERE release_mbid = ? AND entity_type = 'track'`
+    )
+    .all(releaseMbid);
+
+  const ratedGlobals = rows.map((r) => r.global_rating).filter((v) => v != null);
+  const critMeans = {};
+  for (const name of ALBUM_INHERITABLE) {
+    critMeans[name] = mean1(rows.map((r) => r[TRACK_CRIT_COLUMN[name]]));
+  }
+
+  return {
+    ratedCount: ratedGlobals.length,
+    morceauxMean: mean1(ratedGlobals),
+    critMeans,
+  };
+}
+
+function getAlbumCriteria(ratingId) {
+  const rows = db
+    .prepare(`SELECT name, value, is_manual FROM rating_criteria WHERE rating_id = ?`)
+    .all(ratingId);
+  const map = {};
+  for (const r of rows) map[r.name] = { value: r.value, manual: !!r.is_manual };
+  return map;
+}
+
+// NOTE PAR CRITÈRES Album = moyenne des critères effectivement renseignés,
+// arrondie au dixième (CALCULATION RULE — NOTE PAR CRITÈRES Album).
+function albumCriteriaRating(criteriaMap) {
+  return mean1(ALBUM_CRITERIA.map((n) => criteriaMap[n] && criteriaMap[n].value));
+}
+
+function completeness(setCount, totalCount) {
+  if (setCount === 0) return "none";
+  if (setCount >= totalCount) return "complete";
+  return "partial";
+}
+
+// NOTE GLOBALE Album (CALCULATION RULE — poids de MORCEAUX, répartition du
+// poids restant, MORCEAUX seul, NOTE GLOBALE sans MORCEAUX).
+function computeAlbumGlobal({ feeling, criteriaRating, morceauxMean, coverage, morceauxPref }) {
+  const eligible = coverage != null && coverage >= COVERAGE_THRESHOLD;
+  const participates = eligible && morceauxPref !== 0 && morceauxMean != null;
+
+  const fc = [];
+  if (feeling != null) fc.push(feeling);
+  if (criteriaRating != null) fc.push(criteriaRating);
+
+  if (participates) {
+    // MORCEAUX seul : ni feeling ni critères -> NOTE GLOBALE = moyenne MORCEAUX.
+    if (fc.length === 0) return round1(morceauxMean);
+
+    const weightMorceaux = (1 / 3) * coverage; // max 33,33 % à 100 % de couverture
+    const weightEach = (1 - weightMorceaux) / fc.length; // poids restant réparti à parts égales
+    const value =
+      weightMorceaux * morceauxMean + weightEach * fc.reduce((a, b) => a + b, 0);
+    return round1(value);
+  }
+
+  // MORCEAUX ne participe pas : moyenne des composantes Album disponibles.
+  if (fc.length === 0) return null;
+  return round1(fc.reduce((a, b) => a + b, 0) / fc.length);
+}
+
+// Recalcule et persiste criteria_rating + global_rating de l'album, en
+// resynchronisant au passage les critères hérités non ajustés manuellement
+// (BR — Synchronisation des valeurs héritées / Recalcul automatique).
+function recomputeAlbum(row) {
+  const stats = albumTrackStats(row.mbid);
+  const total = row.album_track_count;
+  const coverage = total ? Math.min(1, stats.ratedCount / total) : null;
+
+  for (const name of ALBUM_INHERITABLE) {
+    const cr = db
+      .prepare(`SELECT * FROM rating_criteria WHERE rating_id = ? AND name = ?`)
+      .get(row.id, name);
+    if (cr && !cr.is_manual) {
+      db.prepare(`UPDATE rating_criteria SET value = ? WHERE id = ?`).run(
+        stats.critMeans[name],
+        cr.id
+      );
+    }
+  }
+
+  const criteriaMap = getAlbumCriteria(row.id);
+  const criteriaRating = albumCriteriaRating(criteriaMap);
+  const global = computeAlbumGlobal({
+    feeling: row.feeling_rating,
+    criteriaRating,
+    morceauxMean: stats.morceauxMean,
+    coverage,
+    morceauxPref: row.morceaux_included,
+  });
+
+  db.prepare(`UPDATE ratings SET criteria_rating = ?, global_rating = ? WHERE id = ?`).run(
+    criteriaRating,
+    global,
+    row.id
+  );
+
+  return { stats, coverage, criteriaMap, criteriaRating, global };
+}
+
+// Point d'entrée du recalcul automatique déclenché par une modif de morceau.
+function recomputeAlbumForRelease(releaseMbid) {
+  if (!releaseMbid) return;
+  const row = getAlbumRow(releaseMbid);
+  if (row) recomputeAlbum(row);
+}
+
+// État complet de la notation d'un album, pour le client.
+function serializeAlbumNotation(releaseMbid, totalCount) {
+  const row = getAlbumRow(releaseMbid);
+  const ratingId = row ? row.id : null;
+
+  // La couverture s'appuie sur le total transmis par le client (tracklist
+  // MusicBrainz) ; on en profite pour le mémoriser sur la ligne album.
+  let total = totalCount;
+  if (total == null && row) total = row.album_track_count;
+  if (row && total != null && total !== row.album_track_count) {
+    db.prepare(`UPDATE ratings SET album_track_count = ? WHERE id = ?`).run(total, row.id);
+  }
+
+  const stats = albumTrackStats(releaseMbid);
+  const coverage = total ? Math.min(1, stats.ratedCount / total) : null;
+  const eligible = coverage != null && coverage >= COVERAGE_THRESHOLD;
+  const morceauxPref = row ? row.morceaux_included : null;
+  const included = morceauxPref !== 0; // NULL ou 1 => coché
+  const participates = eligible && included && stats.morceauxMean != null;
+
+  const criteriaMap = ratingId ? getAlbumCriteria(ratingId) : {};
+  const criteria = {};
+  for (const name of ALBUM_CRITERIA) {
+    if (criteriaMap[name] && criteriaMap[name].value != null) {
+      criteria[name] = {
+        value: criteriaMap[name].value,
+        manual: criteriaMap[name].manual,
+      };
+    }
+  }
+  const setCritCount = Object.keys(criteria).length;
+  const criteriaRating = albumCriteriaRating(criteriaMap);
+  const feeling = row ? row.feeling_rating : null;
+
+  const global = computeAlbumGlobal({
+    feeling,
+    criteriaRating,
+    morceauxMean: stats.morceauxMean,
+    coverage,
+    morceauxPref,
+  });
+
+  return {
+    feeling,
+    feelingComplete: feeling != null,
+    criteria,
+    criteriaRating,
+    criteriaCompleteness: completeness(setCritCount, ALBUM_CRITERIA.length),
+    criteriaSetCount: setCritCount,
+    trackCritMeans: stats.critMeans, // pour « Calculer depuis les morceaux » (brouillon client)
+    morceaux: {
+      mean: stats.morceauxMean,
+      ratedCount: stats.ratedCount,
+      totalCount: total ?? null,
+      coverage,
+      eligible,
+      participates,
+      included,
+      completeness:
+        total != null ? completeness(stats.ratedCount, total) : stats.ratedCount ? "partial" : "none",
+    },
+    global,
   };
 }
 
@@ -603,6 +878,18 @@ async function handleAlbumTracks(mbid, rgMbid, res) {
     data.releaseMbid = releaseMbid;
     data.isLiked = !!(albumRow && albumRow.is_liked);
 
+    // Mémorise le nombre total de morceaux sur la ligne album (si elle
+    // existe) : sert au calcul de couverture, y compris lors d'un recalcul
+    // automatique déclenché plus tard côté serveur.
+    const ratedAlbum = getAlbumRow(releaseMbid);
+    if (ratedAlbum && data.tracks.length && ratedAlbum.album_track_count !== data.tracks.length) {
+      db.prepare(`UPDATE ratings SET album_track_count = ? WHERE id = ?`).run(
+        data.tracks.length,
+        ratedAlbum.id
+      );
+      recomputeAlbum(getAlbumRow(releaseMbid));
+    }
+
     sendJson(res, 200, data);
   } catch (err) {
     console.error(err);
@@ -642,6 +929,7 @@ function handleMyRatings(res) {
     .prepare(
       `SELECT * FROM ratings
        WHERE mbid IS NOT NULL
+         AND entity_type = 'track'
          AND (feeling_rating IS NOT NULL OR criteria_rating IS NOT NULL OR is_classic = 1)
        ORDER BY created_at DESC`
     )
@@ -660,6 +948,7 @@ function handleHome(res) {
               is_classic, release_mbid, created_at
          FROM ratings
         WHERE mbid IS NOT NULL AND global_rating IS NOT NULL
+          AND entity_type = 'track'
         ORDER BY created_at DESC`
     )
     .all()
@@ -680,6 +969,7 @@ function handleHome(res) {
       `SELECT album, artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
          FROM ratings
         WHERE global_rating IS NOT NULL
+          AND entity_type = 'track'
           AND album IS NOT NULL AND album NOT IN ('', 'Album inconnu')
           AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
         GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE
@@ -700,6 +990,7 @@ function handleHome(res) {
       `SELECT artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
          FROM ratings
         WHERE global_rating IS NOT NULL
+          AND entity_type = 'track'
           AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
         GROUP BY artist COLLATE NOCASE
         ORDER BY created_at DESC`
@@ -730,6 +1021,7 @@ function handleSaveFeeling(mbid, body, res) {
     `UPDATE ratings SET feeling_rating = ?, global_rating = ? WHERE id = ?`
   ).run(value, globalRating, row.id);
 
+  recomputeAlbumForRelease(row.release_mbid);
   sendJson(res, 200, serializeRow(getOrCreateTrackRow(mbid)));
 }
 
@@ -741,6 +1033,7 @@ function handleDeleteFeeling(mbid, res) {
     `UPDATE ratings SET feeling_rating = NULL, global_rating = ? WHERE id = ?`
   ).run(globalRating, row.id);
 
+  recomputeAlbumForRelease(row.release_mbid);
   sendJson(res, 200, serializeRow(getOrCreateTrackRow(mbid)));
 }
 
@@ -781,6 +1074,7 @@ function handleSaveCriteria(mbid, body, res) {
     row.id
   );
 
+  recomputeAlbumForRelease(row.release_mbid);
   sendJson(res, 200, serializeRow(getOrCreateTrackRow(mbid)));
 }
 
@@ -795,6 +1089,7 @@ function handleDeleteCriteria(mbid, res) {
      WHERE id = ?`
   ).run(globalRating, row.id);
 
+  recomputeAlbumForRelease(row.release_mbid);
   sendJson(res, 200, serializeRow(getOrCreateTrackRow(mbid)));
 }
 
@@ -818,6 +1113,112 @@ function handleSetLiked(mbid, body, res) {
   db.prepare(`UPDATE ratings SET is_liked = ? WHERE id = ?`).run(value ? 1 : 0, row.id);
 
   sendJson(res, 200, serializeRow(getOrCreateTrackRow(mbid)));
+}
+
+// --- Notation d'album : handlers API (GD-00003) ---
+
+function toNumberOrNull(v) {
+  return typeof v === "number" && !Number.isNaN(v) ? v : null;
+}
+
+// `total` (nb de morceaux de l'album) est transmis en query string sur le GET
+// et dans le corps sur les écritures — il vient de la tracklist MusicBrainz.
+function albumTotalFromQuery(searchParams) {
+  const raw = searchParams.get("total");
+  const n = raw == null ? null : Number(raw);
+  return n != null && Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+function handleGetAlbumNotation(releaseMbid, searchParams, res) {
+  if (!releaseMbid) return sendJson(res, 400, { error: "mbid manquant." });
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, albumTotalFromQuery(searchParams)));
+}
+
+function applyAlbumTotal(row, total) {
+  if (total != null && total !== row.album_track_count) {
+    db.prepare(`UPDATE ratings SET album_track_count = ? WHERE id = ?`).run(total, row.id);
+    row.album_track_count = total;
+  }
+}
+
+// NOTE AU FEELING Album — attribution / modification.
+function handleSaveAlbumFeeling(releaseMbid, body, res) {
+  const value = toNumberOrNull(body.value);
+  if (value == null) return sendJson(res, 400, { error: "Valeur invalide." });
+
+  const row = getOrCreateAlbumRow(releaseMbid, body.meta || {});
+  applyAlbumTotal(row, toNumberOrNull(body.total));
+  db.prepare(`UPDATE ratings SET feeling_rating = ? WHERE id = ?`).run(value, row.id);
+  recomputeAlbum(getAlbumRow(releaseMbid));
+
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, toNumberOrNull(body.total)));
+}
+
+function handleDeleteAlbumFeeling(releaseMbid, res) {
+  const row = getAlbumRow(releaseMbid);
+  if (row) {
+    db.prepare(`UPDATE ratings SET feeling_rating = NULL WHERE id = ?`).run(row.id);
+    recomputeAlbum(getAlbumRow(releaseMbid));
+  }
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, null));
+}
+
+// NOTE PAR CRITÈRES Album — le client envoie l'état complet souhaité :
+// { criteria: { <nom>: { value, manual } , ... }, meta, total }.
+// Seuls les critères avec une valeur sont conservés (saisie partielle OK).
+// Un objet vide est accepté : il remet la NOTE PAR CRITÈRES à « non
+// renseigné » (résultat d'un RÉINITIALISER suivi d'ENREGISTRER — écart
+// assumé vs. « au moins un critère requis » du spec, cf. GAPS_ET_DECISIONS.md).
+function handleSaveAlbumCriteria(releaseMbid, body, res) {
+  const input = body.criteria || {};
+  const clean = {};
+  for (const name of ALBUM_CRITERIA) {
+    const entry = input[name];
+    const value = entry ? toNumberOrNull(entry.value) : null;
+    if (value == null) continue;
+    if (value < 0 || value > 10) return sendJson(res, 400, { error: "Valeur hors échelle." });
+    clean[name] = { value, manual: !!(entry && entry.manual) };
+  }
+
+  const row = getOrCreateAlbumRow(releaseMbid, body.meta || {});
+  applyAlbumTotal(row, toNumberOrNull(body.total));
+
+  const del = db.prepare(`DELETE FROM rating_criteria WHERE rating_id = ?`);
+  const ins = db.prepare(
+    `INSERT INTO rating_criteria (rating_id, name, value, is_manual) VALUES (?, ?, ?, ?)`
+  );
+  const write = db.transaction(() => {
+    del.run(row.id);
+    for (const [name, { value, manual }] of Object.entries(clean)) {
+      ins.run(row.id, name, value, manual ? 1 : 0);
+    }
+  });
+  write();
+
+  recomputeAlbum(getAlbumRow(releaseMbid));
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, toNumberOrNull(body.total)));
+}
+
+function handleDeleteAlbumCriteria(releaseMbid, res) {
+  const row = getAlbumRow(releaseMbid);
+  if (row) {
+    db.prepare(`DELETE FROM rating_criteria WHERE rating_id = ?`).run(row.id);
+    recomputeAlbum(getAlbumRow(releaseMbid));
+  }
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, null));
+}
+
+// Toggle « Prendre en compte mes notes des morceaux » — ne contrôle QUE la
+// participation de MORCEAUX à la NOTE GLOBALE (pas l'héritage des critères).
+function handleSetAlbumMorceaux(releaseMbid, body, res) {
+  const row = getOrCreateAlbumRow(releaseMbid, body.meta || {});
+  applyAlbumTotal(row, toNumberOrNull(body.total));
+  db.prepare(`UPDATE ratings SET morceaux_included = ? WHERE id = ?`).run(
+    body.value ? 1 : 0,
+    row.id
+  );
+  recomputeAlbum(getAlbumRow(releaseMbid));
+  sendJson(res, 200, serializeAlbumNotation(releaseMbid, toNumberOrNull(body.total)));
 }
 
 // --- Petit serveur HTTP (statique + API), sans dépendance supplémentaire ---
@@ -929,6 +1330,49 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === "/api/artist" && req.method === "GET") {
       return await handleArtistPage(url.searchParams.get("mbid"), res);
+    }
+
+    // --- Notation d'album ---
+    const albumNotationMatch = pathname.match(/^\/api\/albums\/([^/]+)\/notation$/);
+    if (albumNotationMatch && req.method === "GET") {
+      return handleGetAlbumNotation(
+        decodeURIComponent(albumNotationMatch[1]),
+        url.searchParams,
+        res
+      );
+    }
+
+    const albumFeelingMatch = pathname.match(/^\/api\/albums\/([^/]+)\/feeling$/);
+    if (albumFeelingMatch && req.method === "PUT") {
+      return handleSaveAlbumFeeling(
+        decodeURIComponent(albumFeelingMatch[1]),
+        await readBody(req),
+        res
+      );
+    }
+    if (albumFeelingMatch && req.method === "DELETE") {
+      return handleDeleteAlbumFeeling(decodeURIComponent(albumFeelingMatch[1]), res);
+    }
+
+    const albumCriteriaMatch = pathname.match(/^\/api\/albums\/([^/]+)\/criteria$/);
+    if (albumCriteriaMatch && req.method === "PUT") {
+      return handleSaveAlbumCriteria(
+        decodeURIComponent(albumCriteriaMatch[1]),
+        await readBody(req),
+        res
+      );
+    }
+    if (albumCriteriaMatch && req.method === "DELETE") {
+      return handleDeleteAlbumCriteria(decodeURIComponent(albumCriteriaMatch[1]), res);
+    }
+
+    const albumMorceauxMatch = pathname.match(/^\/api\/albums\/([^/]+)\/morceaux$/);
+    if (albumMorceauxMatch && req.method === "PUT") {
+      return handleSetAlbumMorceaux(
+        decodeURIComponent(albumMorceauxMatch[1]),
+        await readBody(req),
+        res
+      );
     }
 
     const trackMatch = pathname.match(/^\/api\/tracks\/([^/]+)$/);

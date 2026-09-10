@@ -379,6 +379,42 @@ body {
   font-weight: 800; /* note globale : gras */
 }
 
+/* MORCEAUX affichée « à titre informatif » (couverture < 70 % ou toggle off) :
+   valeur visible mais grise — elle n'entre pas dans la NOTE GLOBALE. */
+.album-note.not-counted {
+  color: var(--grey);
+}
+
+/* Pastille d'état de complétude (non renseigné / partiel / complet) devant
+   MORCEAUX, FEELING et CRITÈRES. La NOTE GLOBALE n'en porte pas (résultat). */
+.album-note.with-state {
+  position: relative;
+  padding-left: 12px;
+}
+
+.album-note.with-state::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--grey);
+  background: transparent;
+}
+
+.album-note.state-partial::before {
+  border-color: var(--gold);
+  background: linear-gradient(90deg, var(--gold) 0 50%, transparent 50% 100%);
+}
+
+.album-note.state-complete::before {
+  border-color: var(--gold);
+  background: var(--gold);
+}
+
 .album-note-sep {
   flex-shrink: 0;
   color: var(--grey);
@@ -1004,14 +1040,17 @@ input[type="range"]::-moz-range-track {
 
 /* En édition, les sliders manipulables passent au violet. */
 #feeling-block.editing #feeling-slider,
-#criteria-block.editing .mini-slider {
+#criteria-block.editing .mini-slider,
+#album-feeling-block.editing #album-feeling-slider,
+#album-criteria-block.editing .mini-slider {
   --fill: var(--blue-fill);
 }
 
 /* Critère pas encore renseigné (mode édition) : reste gris et estompé pour
    bien montrer qu'il ne compte pas dans la moyenne (sa valeur affiche déjà
    « — »). Il passe au violet dès qu'on le règle. */
-#criteria-block.editing .mini-slider.unset {
+#criteria-block.editing .mini-slider.unset,
+#album-criteria-block.editing .mini-slider.unset {
   --fill: var(--slider-grey);
   opacity: 0.35;
 }
@@ -1038,7 +1077,26 @@ input[type="range"]::-moz-range-track {
   display: grid;
   grid-template-columns: 84px 1fr 38px;
   align-items: center;
-  gap: 10px;
+  gap: 10px 10px;
+}
+
+/* Bouton « revenir à la valeur calculée » (critère hérité ajusté à la main) :
+   sur sa propre ligne, sous le critère concerné. */
+.crit-revert {
+  grid-column: 2 / -1;
+  justify-self: start;
+  margin-top: -10px;
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.crit-revert:hover {
+  filter: brightness(1.15);
 }
 
 .criteria-label {
@@ -1115,6 +1173,89 @@ input[type="range"]::-moz-range-track {
   border: none;
   border-top: 1px solid var(--divider);
   margin: 6px 0;
+}
+
+/* --- Notation d'album (GD-00003) : carte insérée sous la ligne MA NOTATION,
+   au-dessus de la tracklist. Même charte que .notation-card du morceau. --- */
+
+.album-rating-card {
+  margin: 14px 0 8px;
+}
+
+/* En-tête de l'écran de notation : bouton retour explicite. */
+.album-rating-back {
+  display: block;
+  margin-bottom: 4px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--divider);
+  width: 100%;
+  text-align: left;
+}
+
+/* Bouton « Calculer Performance / Texte / Production depuis mes morceaux ». */
+.inherit-btn {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  background: transparent;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 11.5px;
+  line-height: 1.3;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.inherit-btn:hover {
+  background: rgba(244, 196, 48, 0.1);
+}
+
+.inherit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Toggle « Prendre en compte mes notes des morceaux ». */
+.morceaux-toggle-row {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+}
+
+.morceaux-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--white);
+  cursor: pointer;
+}
+
+.morceaux-toggle input {
+  margin-top: 1px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--gold);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.morceaux-toggle-row.is-locked .morceaux-toggle {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.morceaux-toggle-row.is-locked .morceaux-toggle input {
+  cursor: not-allowed;
+}
+
+.morceaux-toggle-note {
+  margin: 6px 0 0 26px;
+  font-size: 11.5px;
+  color: var(--grey);
+  line-height: 1.4;
 }
 
 /* --- Accueil : mosaïque des dernières notations --- */

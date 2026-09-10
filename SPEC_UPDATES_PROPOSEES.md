@@ -130,6 +130,55 @@ corrigé. **Aucune action.**
 
 ---
 
+## A6. RÉINITIALISER de la NOTE PAR CRITÈRES Album — remise à vide totale
+
+**Contexte :** demande explicite de l'utilisateur (2026-09-10). La logique du
+spec (RÉINITIALISER restaure les valeurs héritées P/T/P) est jugée trop
+restrictive à l'usage. Nouvelle règle voulue : **RÉINITIALISER vide toute la
+NOTE PAR CRITÈRES Album** (les 5 critères), y compris les valeurs héritées,
+qui ne réapparaissent pas automatiquement. L'utilisateur peut ensuite
+recliquer « Calculer P/T/P depuis mes morceaux ». Implémenté ainsi.
+
+**Statut : `À VALIDER` (choix produit)**
+
+### A6a. Nouvelle formulation proposée — Disponibilité de RÉINITIALISER
+- **Texte actuel (spec album) :**
+  > Pendant l'édition des critères Album, l'action RÉINITIALISER est
+  > disponible uniquement lorsqu'au moins une saisie ou modification manuelle
+  > peut être annulée. […] Lorsque les critères Album sont déjà à leur état de
+  > référence — aucune valeur manuelle ou uniquement des valeurs héritées non
+  > ajustées — l'action RÉINITIALISER n'est pas disponible.
+- **Texte proposé :**
+  > Pendant l'édition des critères Album, RÉINITIALISER est disponible dès
+  > qu'au moins un critère porte une valeur (héritée, manuelle, ou les deux).
+  > Elle n'est indisponible que lorsque les cinq critères sont non renseignés.
+
+### A6b. Nouvelle formulation proposée — Effet de RÉINITIALISER
+- **Texte actuel (spec album) :**
+  > Lorsque des valeurs héritées existent pour Performance, Texte ou
+  > Production, RÉINITIALISER supprime les saisies et ajustements manuels
+  > correspondants et restaure les valeurs héritées disponibles. Les saisies
+  > manuelles de Cohérence et Créativité reviennent à un état non renseigné.
+- **Texte proposé :**
+  > RÉINITIALISER ramène les cinq critères Album à un état non renseigné, y
+  > compris les valeurs héritées de Performance, Texte et Production —
+  > l'héritage est rompu et les valeurs calculées ne sont pas restaurées
+  > automatiquement. L'utilisateur reste en mode édition ; aucune sauvegarde
+  > n'est effectuée. Un nouveau calcul depuis les morceaux peut être relancé
+  > ensuite.
+
+### A6c. Enregistrer une NOTE PAR CRITÈRES Album vide
+- **Impact :** la règle « au moins un critère renseigné pour enregistrer »
+  (BUSINESS RULE — Critères partiels) ne s'applique plus au cas où
+  l'utilisateur **efface** une NOTE PAR CRITÈRES existante : ENREGISTRER
+  après RÉINITIALISER persiste l'état « non renseigné » (équivalent d'une
+  suppression de la NOTE PAR CRITÈRES Album). À arbitrer : faut-il un
+  scénario dédié « Supprimer la NOTE PAR CRITÈRES Album » ?
+- **Sans changement :** « ↻ valeur calculée » (retour hérité d'un critère
+  précis) et le toggle « Prendre en compte mes notes des morceaux ».
+
+---
+
 # PARTIE B — Nouvelles fonctionnalités à spécifier
 
 Toutes ces capacités ont été développées à la demande de l'utilisateur et ne
