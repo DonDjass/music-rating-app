@@ -1279,6 +1279,16 @@ input[type="range"]::-moz-range-track {
   cursor: not-allowed;
 }
 
+/* Repli visible du `title` du bouton ci-dessus (motif de désactivation) —
+   un `title` ne s'affiche jamais au tap sur mobile, seulement au survol. */
+.inherit-btn-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--grey);
+  text-align: center;
+}
+
 /* Toggle « Prendre en compte mes notes des morceaux ». */
 .morceaux-toggle-row {
   margin-top: 18px;

@@ -1338,6 +1338,7 @@ const albumCriteriaValueEl = el("album-criteria-value");
 const albumCriteriaActions = el("album-criteria-actions");
 const albumCriteriaBreakdown = el("album-criteria-breakdown");
 const albumInheritBtn = el("album-inherit-btn");
+const albumInheritHint = el("album-inherit-hint");
 
 const albumMorceauxRow = el("album-morceaux-row");
 const albumMorceauxCheck = el("album-morceaux-check");
@@ -1644,12 +1645,18 @@ function renderAlbumCriteria() {
   }
 
   // Bouton "Calculer depuis les morceaux" : dispo si au moins un des 3
-  // critères héritables a une moyenne morceaux.
+  // critères héritables a une moyenne morceaux. Le motif de désactivation est
+  // dupliqué en texte visible (`album-inherit-hint`) : un `title` ne s'affiche
+  // jamais au tap sur mobile (pas de survol), il resterait invisible là où
+  // l'appli est surtout utilisée.
   const anyTrackMean = ALBUM_INHERITABLE.some((n) => trackMean(n) != null);
   albumInheritBtn.disabled = !anyTrackMean;
-  albumInheritBtn.title = anyTrackMean
+  const inheritHintText = anyTrackMean
     ? ""
     : "Aucun morceau de l'album n'a de note Performance / Texte / Production.";
+  albumInheritBtn.title = inheritHintText;
+  albumInheritHint.textContent = inheritHintText;
+  albumInheritHint.hidden = !isEditing || !inheritHintText;
 
   const liveAvg = isEditing ? albumCriteriaDraftAvg() : (albumNotation ? albumNotation.criteriaRating : null);
   albumCriteriaValueEl.textContent = formatNum(liveAvg);
