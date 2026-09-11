@@ -7,6 +7,40 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Code à 4 chiffres par pseudo normal — demande explicite 2026-09-11
+
+But : empêcher qu'un pseudo déjà pris par quelqu'un soit réclamé par
+quelqu'un d'autre à la porte d'entrée (les profils légers n'avaient jusqu'ici
+aucune protection entre eux — voir `[[project_profiles_lightweight]]`).
+
+- **Fixé au premier usage** de chaque pseudo, pas à sa création à proprement
+  parler : le premier qui tape un pseudo choisit son code à 4 chiffres ; les
+  usages suivants du même pseudo doivent le fournir. Ne concerne que les
+  profils normaux — « Don »/réservés restent protégés par le mot de passe
+  admin, sans rapport avec ce code.
+- **Portée assumée : vérifié à la porte d'entrée uniquement**, pas à chaque
+  requête (contrairement au rôle admin, dont le jeton est vérifié sur chaque
+  appel). Ferme le cas réel visé (quelqu'un tape le pseudo d'un autre dans
+  l'appli) mais pas un appel direct à l'API avec un `X-Profile` arbitraire —
+  choix conscient, cohérent avec le niveau de protection déjà accepté pour
+  les profils normaux (cf. décision du 2026-09-11 sur les rôles).
+- **Stockage :** nouvelle table `profile_pins` (`profile`, `pin_hash` salé
+  par le pseudo, `sha256`) — pas de champ sur `ratings`. Un code à 4 chiffres
+  a de toute façon 10 000 combinaisons ; le hachage évite juste une lecture
+  directe en base, pas une attaque par force brute côté serveur.
+- **Oubli du code :** pas de récupération self-service. Outil admin
+  `POST /api/admin/profile-pin-reset` (jeton admin requis) : supprime le
+  code enregistré, le pseudo redevient « à réclamer » — le prochain qui le
+  tape (normalement son propriétaire) en fixe un nouveau.
+- **Migration :** aucune — la table démarre vide. Un pseudo déjà utilisé
+  avant l'ajout de cette fonctionnalité (aucun cas réel en bêta à ce stade)
+  serait traité comme « jamais réclamé » : le premier qui le retape après ce
+  déploiement fixe son code, sans distinction avec un nouveau pseudo.
+- Testé en local : réclamation d'un nouveau pseudo, mauvais code, bon code,
+  pseudo réservé refusé, code mal formé refusé, reset admin puis
+  re-réclamation, isolation des notations inchangée. Base restaurée à
+  l'identique après tests.
+
 ## NOTE AU FEELING Album calculée depuis les morceaux — 2026-09-11
 
 Extension symétrique du mécanisme déjà validé pour Performance/Texte/

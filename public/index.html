@@ -324,6 +324,117 @@
           actions ne supprime de notation.
         </p>
       </div>
+
+      <div class="settings-card">
+        <p class="settings-label">Aide</p>
+        <button id="replay-onboarding-btn" type="button" class="link-btn settings-link">Revoir l'aide</button>
+        <button id="open-rules-btn" type="button" class="link-btn settings-link">Règles de calcul</button>
+      </div>
+    </section>
+
+    <section id="rules-view" hidden>
+      <button class="drilldown-back" id="rules-back" type="button">← Retour aux réglages</button>
+      <h1 class="search-title">Règles de calcul</h1>
+      <div class="rules-content" id="rules-content">
+        <p>Comment tes notes se calculent, en détail — morceau puis album.</p>
+
+        <h2>Morceau</h2>
+
+        <h3>Note par critères</h3>
+        <p>
+          C'est la moyenne de Performance, Texte et Production — mais tu n'as
+          pas besoin de renseigner les trois : la moyenne se fait sur ceux que
+          tu as effectivement notés, arrondie au dixième.
+        </p>
+        <div class="rules-example">
+          Exemple : Performance = 8, Texte = 6, Production non renseignée →
+          Note par critères = 7,0.
+        </div>
+
+        <h3>Note globale</h3>
+        <p>
+          Elle combine ta note au feeling et ta note par critères, quand les
+          deux existent :
+        </p>
+        <p>
+          — Les deux sont renseignées → moyenne des deux, arrondie au dixième.<br />
+          — Une seule est renseignée → la note globale est simplement égale à
+          celle-là.<br />
+          — Aucune des deux → pas de note globale pour ce morceau.
+        </p>
+
+        <hr />
+
+        <h2>Album</h2>
+
+        <h3>Note par critères de l'album</h3>
+        <p>
+          Même principe qu'au niveau morceau, mais sur 5 critères : Performance,
+          Texte, Production, Cohérence, Créativité. La moyenne se fait sur ceux
+          renseignés (au moins un suffit), arrondie au dixième.
+        </p>
+
+        <h3>Calculer Performance / Texte / Production depuis tes morceaux</h3>
+        <p>
+          Pour ces trois critères seulement (Cohérence et Créativité sont
+          propres à l'album, jamais calculées), tu peux demander à l'appli de
+          les calculer à partir de la moyenne de ce même critère sur les
+          morceaux de l'album que tu as notés — dès qu'<strong>un seul</strong>
+          morceau a une note pour ce critère, pas besoin d'en avoir noté
+          beaucoup. Tant que tu ne modifies pas la valeur à la main, elle reste
+          à jour automatiquement à chaque fois que tu notes ou changes une note
+          de morceau. Si tu l'ajustes toi-même, elle devient « manuelle » et
+          n'est plus recalculée — tu peux revenir à la valeur calculée à tout
+          moment.
+        </p>
+        <p class="rules-note">
+          Ta note au feeling de l'album peut, elle aussi, être calculée de la
+          même façon depuis les notes au feeling de tes morceaux.
+        </p>
+
+        <h3>La composante « Morceaux »</h3>
+        <p>
+          En plus de ta note au feeling et de ta note par critères pour
+          l'album lui-même, l'appli peut prendre en compte la moyenne des
+          notes globales de tes morceaux notés — c'est la composante
+          « Morceaux ». Elle ne compte que si tu as noté au moins
+          <strong>70 % des morceaux de l'album</strong> (en dessous, elle
+          s'affiche à titre indicatif mais ne pèse pas dans le calcul). Tu
+          peux aussi la décocher manuellement même si le seuil est atteint.
+        </p>
+
+        <h3>Note globale de l'album</h3>
+        <p>
+          C'est là que tout se combine : feeling de l'album, critères de
+          l'album, et Morceaux (si elle compte).
+        </p>
+        <p>
+          — Si Morceaux compte : son poids va jusqu'à un tiers (33,33 %) de la
+          note globale, proportionnellement à la part de morceaux notés (par
+          exemple, 50 % de couverture → poids de 16,7 %). Le reste se répartit
+          à parts égales entre le feeling et les critères de l'album, selon
+          ceux qui existent.<br />
+          — Si les trois composantes existent et que tu as noté 100 % des
+          morceaux : chacune pèse exactement un tiers.<br />
+          — Si Morceaux ne compte pas (ou est décochée) : la note globale est
+          la moyenne du feeling et des critères de l'album disponibles — ou
+          juste l'un des deux, si l'autre n'existe pas.<br />
+          — Si tu n'as renseigné ni feeling ni critères pour l'album, mais que
+          Morceaux compte : la note globale de l'album est simplement égale à
+          la moyenne Morceaux.
+        </p>
+        <p class="rules-note">
+          Résultat toujours arrondi au dixième.
+        </p>
+
+        <hr />
+
+        <p class="rules-note">
+          Fiche artiste : pour l'instant, seuls les morceaux notés de cet
+          artiste sont affichés — la notation dédiée à l'artiste n'est pas
+          encore disponible.
+        </p>
+      </div>
     </section>
 
     <section id="my-ratings-view" hidden>
@@ -442,17 +553,31 @@
   <div id="toast" class="toast"></div>
 
   <!-- Porte d'entrée : au premier accès (aucun pseudo sur cet appareil), on
-       demande un pseudo de confort. Pas de mot de passe. -->
+       demande un pseudo + un code à 4 chiffres (fixé au premier usage de ce
+       pseudo, vérifié ensuite — évite qu'un autre le réclame à ta place). -->
   <div id="profile-gate" class="profile-gate" hidden>
     <div class="profile-gate-card">
       <div id="gate-normal">
         <h2>Qui es-tu&nbsp;?</h2>
-        <p>Choisis un pseudo pour retrouver tes notations sur cet appareil. Pas de mot de passe.</p>
+        <p>Choisis un pseudo pour retrouver tes notations sur cet appareil.</p>
         <input type="text" id="profile-gate-input" maxlength="40" placeholder="Ton pseudo"
                autocomplete="off" autocapitalize="off" spellcheck="false" />
         <p id="profile-gate-error" class="profile-gate-error" hidden></p>
         <button id="profile-gate-submit" type="button" class="btn btn-green">Continuer</button>
         <button id="gate-admin-link" type="button" class="link-btn gate-link" hidden>Je suis l'administrateur</button>
+      </div>
+      <div id="gate-pin" hidden>
+        <h2>Code du pseudo</h2>
+        <p id="gate-pin-intro">Pseudo « — ».</p>
+        <p class="settings-hint">
+          Nouveau pseudo : choisis un code à 4 chiffres, tu le retaperas la
+          prochaine fois. Pseudo déjà utilisé : entre son code.
+        </p>
+        <input type="password" id="gate-pin-input" inputmode="numeric" pattern="[0-9]*"
+               maxlength="4" placeholder="••••" autocomplete="off" />
+        <p id="gate-pin-error" class="profile-gate-error" hidden></p>
+        <button id="gate-pin-submit" type="button" class="btn btn-green">Continuer</button>
+        <button id="gate-pin-back" type="button" class="link-btn gate-link">Retour</button>
       </div>
       <div id="gate-admin" hidden>
         <h2>Administrateur</h2>
@@ -462,6 +587,64 @@
         <p id="gate-admin-error" class="profile-gate-error" hidden></p>
         <button id="gate-admin-submit" type="button" class="btn btn-green">Se connecter</button>
         <button id="gate-admin-back" type="button" class="link-btn gate-link">Retour</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notice d'accueil (3 pages) : une fois par profil après le choix du
+       pseudo, ou à la demande via Réglages → « Revoir l'aide ». -->
+  <div id="onboarding-overlay" class="profile-gate" hidden>
+    <div class="onboarding-card">
+      <div class="onboarding-page" data-page="1">
+        <h2>Bienvenue !</h2>
+        <p class="onboarding-intro">Note tes morceaux, albums et artistes préférés, à ta façon.</p>
+        <div class="onboarding-block">
+          <h3>Au feeling</h3>
+          <p>Une note instinctive, sur 10. Simple et rapide.</p>
+        </div>
+        <p class="onboarding-or">Ou alors !</p>
+        <div class="onboarding-block">
+          <h3>Par critères</h3>
+          <p>Détaille ta note selon Performance, Texte, Production…</p>
+        </div>
+        <p class="onboarding-footer">Les deux sont facultatifs — utilise ce qui te parle.</p>
+      </div>
+
+      <div class="onboarding-page" data-page="2" hidden>
+        <h2>Les parcours de notation</h2>
+        <div class="onboarding-block">
+          <h3>Le parcours complet</h3>
+          <p>Note les morceaux d'un album (au feeling et/ou par critères), puis note l'album lui-même.</p>
+        </div>
+        <p class="onboarding-or">Ou alors !</p>
+        <div class="onboarding-block">
+          <h3>Juste un morceau, ou juste un album</h3>
+          <p>Pas besoin de tout faire — note seulement ce qui te tente.</p>
+        </div>
+        <p class="onboarding-highlight">Bref, libre à toi de suivre ton feeling !!! 🎧</p>
+      </div>
+
+      <div class="onboarding-page" data-page="3" hidden>
+        <h2>Et ensuite ?</h2>
+        <div class="onboarding-block">
+          <h3>Retrouve et modifie tes notes</h3>
+          <p>Tout ce que tu notes reste accessible et modifiable à tout moment, dans « Mes notations ».</p>
+        </div>
+        <div class="onboarding-block onboarding-block-soon">
+          <span class="onboarding-soon-label">Bientôt</span>
+          <p>Découvre les notes de tes amis et de la communauté Applicalbum.</p>
+        </div>
+      </div>
+
+      <div class="onboarding-dots" id="onboarding-dots">
+        <span class="onboarding-dot active" data-dot="1"></span>
+        <span class="onboarding-dot" data-dot="2"></span>
+        <span class="onboarding-dot" data-dot="3"></span>
+      </div>
+
+      <div class="onboarding-nav-row">
+        <button type="button" class="btn onboarding-prev" id="onboarding-prev-btn" hidden>Précédent</button>
+        <button type="button" class="btn btn-green onboarding-next" id="onboarding-next-btn">Suivant</button>
       </div>
     </div>
   </div>

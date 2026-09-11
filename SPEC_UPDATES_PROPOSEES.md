@@ -473,8 +473,17 @@ plusieurs personnes sur la même instance, notations séparées, sans comptes.
 
 **Business Rules proposées :**
 - `RQ-000XX` — Au premier accès sur un appareil, l'utilisateur saisit un pseudo
-  (texte libre, pas de mot de passe). Le pseudo est mémorisé sur l'appareil et
-  n'est plus redemandé.
+  (texte libre) puis un code à 4 chiffres. Le pseudo et le code sont mémorisés
+  sur l'appareil et ne sont plus redemandés.
+- `BR-000XX` — Le code à 4 chiffres est fixé au **premier usage** d'un pseudo
+  (celui qui le tape en premier le choisit) et vérifié à chaque usage
+  ultérieur du même pseudo — empêche qu'un utilisateur normal réclame un
+  pseudo déjà pris par quelqu'un d'autre. Vérifié uniquement à la connexion,
+  pas à chaque requête. Ne s'applique pas au(x) pseudo(s) réservé(s), déjà
+  protégé(s) par le mot de passe admin.
+- `BR-000XX` — Un code oublié n'est pas récupérable par l'utilisateur ;
+  l'administrateur peut réinitialiser le code d'un pseudo (celui-ci redevient
+  « à réclamer »).
 - `BR-000XX` — Toutes les notations (feeling, critères, Classic, J'aime, note
   d'album) sont rattachées au pseudo courant. Les écrans « ma notation » (fiche
   morceau, fiche album — dont **NOTE MORCEAUX**, fiche artiste), « Mes
@@ -495,7 +504,8 @@ plusieurs personnes sur la même instance, notations séparées, sans comptes.
     notation.
 - **Hors périmètre (à cadrer plus tard) :** agrégation entre profils,
   comparaison communautaire (`RQ-00007`), gestion/renommage/fusion de profils,
-  protection des utilisateurs normaux entre eux, transport chiffré (HTTPS).
+  protection au niveau de chaque requête API (le code à 4 chiffres n'est
+  vérifié qu'à la connexion), transport chiffré (HTTPS).
 
 ---
 

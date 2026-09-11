@@ -760,7 +760,18 @@ rateTracksBtn.addEventListener("click", () => {
 
 // --- Recherche ---
 
-const ALL_VIEWS = [homeView, searchView, drilldownView, artistView, myRatingsView, settingsView, trackView];
+const rulesView = el("rules-view");
+
+const ALL_VIEWS = [
+  homeView,
+  searchView,
+  drilldownView,
+  artistView,
+  myRatingsView,
+  settingsView,
+  trackView,
+  rulesView,
+];
 
 function showOnly(view) {
   // Tout changement d'écran coupe l'extrait 30 s en cours (fiche morceau).
@@ -786,6 +797,13 @@ function showSettingsView() {
   updateTabBar();
   refreshProfileUI();
   showOnly(settingsView);
+}
+
+// Sous-page de Réglages (reste sur l'onglet Réglages, juste un écran de plus).
+function showRulesView() {
+  currentSection = "settings";
+  updateTabBar();
+  showOnly(rulesView);
 }
 
 function showSearchView() {
@@ -2355,16 +2373,25 @@ async function loadMyRatings() {
 
 const profileGate = el("profile-gate");
 const gateNormal = el("gate-normal");
+const gatePin = el("gate-pin");
 const gateAdmin = el("gate-admin");
 const profileGateInput = el("profile-gate-input");
 profileGateInput.maxLength = PROFILE_MAX_LENGTH; // synchronisé avec normalizeProfile ci-dessus
 const profileGateSubmit = el("profile-gate-submit");
 const profileGateError = el("profile-gate-error");
 const gateAdminLink = el("gate-admin-link");
+const gatePinIntro = el("gate-pin-intro");
+const gatePinInput = el("gate-pin-input");
+const gatePinSubmit = el("gate-pin-submit");
+const gatePinBack = el("gate-pin-back");
+const gatePinError = el("gate-pin-error");
 const gateAdminPassword = el("gate-admin-password");
 const gateAdminSubmit = el("gate-admin-submit");
 const gateAdminBack = el("gate-admin-back");
 const gateAdminError = el("gate-admin-error");
+
+// Pseudo en attente de son code (entre l'écran "pseudo" et l'écran "code").
+let pendingProfile = null;
 
 const settingsRoleEl = el("settings-role");
 const adminSwitchEl = el("admin-switch");
@@ -2377,6 +2404,7 @@ const settingsHintAdmin = el("settings-hint-admin");
 
 function showGateMode(mode) {
   gateNormal.hidden = mode !== "normal";
+  gatePin.hidden = mode !== "pin";
   gateAdmin.hidden = mode !== "admin";
 }
 
@@ -2393,6 +2421,7 @@ function showProfileGate(mode = "normal") {
   }, 50);
 }
 
+// Étape 1 : pseudo -> passe à l'étape "code" (ne connecte pas encore).
 function submitProfile() {
   const val = normalizeProfile(profileGateInput.value);
   if (!val) {
@@ -2405,10 +2434,34 @@ function submitProfile() {
     profileGateError.hidden = false;
     return;
   }
-  profile = val;
-  storeLocal(PROFILE_KEY, val);
-  profileGate.hidden = true;
-  startApp();
+  pendingProfile = val;
+  gatePinInput.value = "";
+  gatePinError.hidden = true;
+  gatePinIntro.textContent = `Pseudo « ${val} ».`;
+  showGateMode("pin");
+  setTimeout(() => gatePinInput.focus(), 50);
+}
+
+// Étape 2 : code à 4 chiffres — le serveur le fixe au premier usage de ce
+// pseudo, le vérifie ensuite (POST /api/profile/claim fait les deux).
+async function submitPin() {
+  const pin = gatePinInput.value.trim();
+  if (!/^\d{4}$/.test(pin)) {
+    gatePinError.textContent = "Le code doit contenir 4 chiffres.";
+    gatePinError.hidden = false;
+    return;
+  }
+  try {
+    await api("/api/profile/claim", "POST", { profile: pendingProfile, pin });
+    profile = pendingProfile;
+    pendingProfile = null;
+    storeLocal(PROFILE_KEY, profile);
+    profileGate.hidden = true;
+    startApp();
+  } catch {
+    gatePinError.textContent = "Code incorrect.";
+    gatePinError.hidden = false;
+  }
 }
 
 async function submitAdmin() {
@@ -2435,6 +2488,17 @@ async function submitAdmin() {
 profileGateSubmit.addEventListener("click", submitProfile);
 profileGateInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitProfile();
+});
+gatePinSubmit.addEventListener("click", submitPin);
+gatePinInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitPin();
+});
+gatePinBack.addEventListener("click", () => {
+  // Ne réinitialise pas le pseudo déjà saisi (juste une correction de code).
+  pendingProfile = null;
+  gatePinError.hidden = true;
+  showGateMode("normal");
+  setTimeout(() => profileGateInput.focus(), 50);
 });
 gateAdminLink.addEventListener("click", () => showProfileGate("admin"));
 gateAdminBack.addEventListener("click", () => showProfileGate("normal"));
@@ -2478,12 +2542,106 @@ logoutBtn.addEventListener("click", () => {
   showProfileGate("normal");
 });
 
+// --- Notice d'accueil (3 pages) : une fois par profil après le choix du
+// pseudo, ou à la demande via Réglages → « Revoir l'aide ». ---
+
+const ONBOARDING_SEEN_KEY = "mr_onboarding_seen";
+const onboardingOverlay = el("onboarding-overlay");
+const onboardingPages = [...onboardingOverlay.querySelectorAll(".onboarding-page")];
+const onboardingDots = [...onboardingOverlay.querySelectorAll(".onboarding-dot")];
+const onboardingPrevBtn = el("onboarding-prev-btn");
+const onboardingNextBtn = el("onboarding-next-btn");
+const replayOnboardingBtn = el("replay-onboarding-btn");
+
+let onboardingPage = 1;
+let onboardingAfterClose = null;
+
+// { <pseudo>: true, ... } — un pseudo par entrée, pas de notion globale : sur
+// cet appareil, chaque profil voit la notice une fois (léger, pas de compte).
+function getOnboardingSeenMap() {
+  try {
+    return JSON.parse(localStorage.getItem(ONBOARDING_SEEN_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function hasSeenOnboarding(p) {
+  return !p || !!getOnboardingSeenMap()[p];
+}
+
+function markOnboardingSeen(p) {
+  if (!p) return;
+  const map = getOnboardingSeenMap();
+  map[p] = true;
+  storeLocal(ONBOARDING_SEEN_KEY, JSON.stringify(map));
+}
+
+function renderOnboardingPage() {
+  for (const page of onboardingPages) {
+    page.hidden = Number(page.dataset.page) !== onboardingPage;
+  }
+  for (const dot of onboardingDots) {
+    dot.classList.toggle("active", Number(dot.dataset.dot) === onboardingPage);
+  }
+  onboardingPrevBtn.hidden = onboardingPage === 1;
+  const isLastPage = onboardingPage === onboardingPages.length;
+  onboardingNextBtn.textContent = isLastPage ? "C'est parti !" : "Suivant";
+  // Compact tant qu'on n'est pas sur la dernière page (bouton de fin, plus
+  // affirmé, laissé en pleine largeur).
+  onboardingNextBtn.classList.toggle("onboarding-next-compact", !isLastPage);
+}
+
+// `afterClose` : ce qu'on fait une fois la notice fermée (ouvrir la
+// recherche au premier accès ; revenir aux Réglages depuis "Revoir l'aide").
+function showOnboarding(afterClose) {
+  onboardingPage = 1;
+  onboardingAfterClose = afterClose;
+  renderOnboardingPage();
+  onboardingOverlay.hidden = false;
+}
+
+function closeOnboarding() {
+  onboardingOverlay.hidden = true;
+  markOnboardingSeen(profile);
+  const cb = onboardingAfterClose;
+  onboardingAfterClose = null;
+  if (cb) cb();
+}
+
+onboardingPrevBtn.addEventListener("click", () => {
+  if (onboardingPage > 1) {
+    onboardingPage--;
+    renderOnboardingPage();
+  }
+});
+
+onboardingNextBtn.addEventListener("click", () => {
+  if (onboardingPage < onboardingPages.length) {
+    onboardingPage++;
+    renderOnboardingPage();
+  } else {
+    closeOnboarding();
+  }
+});
+
+replayOnboardingBtn.addEventListener("click", () => {
+  showOnboarding(() => showSettingsView());
+});
+
+el("open-rules-btn").addEventListener("click", showRulesView);
+el("rules-back").addEventListener("click", showSettingsView);
+
 // --- Démarrage : on récupère la config (mode admin ?), on valide un éventuel
 // jeton admin mémorisé, puis on ouvre l'appli ou la porte d'entrée. ---
 
 function startApp() {
   refreshProfileUI();
-  showSearchView();
+  if (!hasSeenOnboarding(profile)) {
+    showOnboarding(() => showSearchView());
+  } else {
+    showSearchView();
+  }
 }
 
 async function boot() {

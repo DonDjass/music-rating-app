@@ -234,6 +234,27 @@ db.exec(`
   )
 `);
 
+// Code à 4 chiffres par pseudo normal (pas "Don"/les profils réservés, déjà
+// protégés par le mot de passe admin) — fixé au premier usage du pseudo,
+// vérifié à chaque fois qu'il est retapé. But : empêcher qu'un pseudo déjà
+// pris par quelqu'un soit réclamé par quelqu'un d'autre à la porte d'entrée.
+// Vérifié UNIQUEMENT à la porte d'entrée (pas à chaque requête) — même
+// niveau de protection que le reste des profils normaux.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS profile_pins (
+    profile TEXT PRIMARY KEY,
+    pin_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Salé par le pseudo lui-même — protection cosmétique (un code à 4 chiffres
+// a de toute façon 10 000 combinaisons), mais évite qu'une comparaison
+// brute des hachages révèle deux profils partageant le même code.
+function hashPin(profileName, pin) {
+  return crypto.createHash("sha256").update(`${profileName}:${pin}`).digest("hex");
+}
+
 // --- Recherche MusicBrainz (recherche de morceaux, couvre aussi les
 // recherches par artiste ou par album puisque MusicBrainz indexe ces
 // champs dans la recherche "recording") ---
@@ -1662,6 +1683,8 @@ const server = http.createServer(async (req, res) => {
       "/api/admin/check",
       "/api/admin/db-status",
       "/api/admin/db-restore",
+      "/api/admin/profile-pin-reset",
+      "/api/profile/claim",
       "/api/cover",
       "/api/deezer-link",
       "/api/search-history",
@@ -1699,6 +1722,51 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJson(res, 200, { token: adminToken() });
     }
+    // Réclame un pseudo normal avec un code à 4 chiffres : le fixe au premier
+    // usage, le vérifie ensuite. Les profils réservés passent par le mot de
+    // passe admin (/api/admin/login), pas par ce code.
+    if (pathname === "/api/profile/claim" && req.method === "POST") {
+      const body = await readBody(req);
+      const raw = typeof body.profile === "string" ? body.profile : "";
+      const claimProfile = raw.trim().replace(/\s+/g, " ").slice(0, PROFILE_MAX_LENGTH);
+      const pin = typeof body.pin === "string" ? body.pin : "";
+      if (!claimProfile || !/^\d{4}$/.test(pin)) {
+        return sendJson(res, 400, { error: "Pseudo ou code invalide." });
+      }
+      if (isReservedProfile(claimProfile)) {
+        return sendJson(res, 403, { error: "Ce profil est réservé à l'administrateur." });
+      }
+      const hash = hashPin(claimProfile, pin);
+      const existing = db
+        .prepare(`SELECT pin_hash FROM profile_pins WHERE profile = ?`)
+        .get(claimProfile);
+      if (!existing) {
+        db.prepare(`INSERT INTO profile_pins (profile, pin_hash) VALUES (?, ?)`).run(
+          claimProfile,
+          hash
+        );
+        return sendJson(res, 200, { ok: true, created: true });
+      }
+      if (!safeEqual(hash, existing.pin_hash)) {
+        return sendJson(res, 401, { error: "Code incorrect." });
+      }
+      return sendJson(res, 200, { ok: true, created: false });
+    }
+
+    // Débloque un pseudo dont le code a été oublié : supprime son code
+    // enregistré, il redevient "à réclamer" (le prochain qui le tape en fixe
+    // un nouveau). Réservé à l'admin — pas de récupération en self-service.
+    if (pathname === "/api/admin/profile-pin-reset" && req.method === "POST") {
+      if (!isAdminRequest(req)) {
+        return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+      }
+      const body = await readBody(req);
+      const target = typeof body.profile === "string" ? body.profile.trim() : "";
+      if (!target) return sendJson(res, 400, { error: "Pseudo manquant." });
+      const info = db.prepare(`DELETE FROM profile_pins WHERE profile = ?`).run(target);
+      return sendJson(res, 200, { ok: true, reset: info.changes > 0 });
+    }
+
     if (pathname === "/api/admin/check" && req.method === "GET") {
       const ok = isAdminRequest(req);
       return sendJson(res, ok ? 200 : 401, { admin: ok });

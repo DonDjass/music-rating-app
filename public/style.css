@@ -1716,3 +1716,222 @@ input[type="range"]::-moz-range-track {
   display: inline-block;
   margin-top: 12px;
 }
+
+/* --- Notice d'accueil (3 pages) --- */
+
+.onboarding-card {
+  width: 100%;
+  max-width: 380px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #1b1b1d;
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 22px 20px 18px;
+  text-align: left;
+}
+
+.onboarding-page h2 {
+  margin: 0 0 10px;
+  color: var(--gold);
+  font-size: 19px;
+  text-align: center;
+}
+
+.onboarding-intro {
+  margin: 0 0 16px;
+  color: var(--white);
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.onboarding-block {
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.onboarding-block h3 {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.onboarding-block p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--white);
+}
+
+.onboarding-footer {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--grey);
+  text-align: center;
+}
+
+.onboarding-footer-italic {
+  font-style: italic;
+}
+
+/* Connecteur entre deux blocs alternatifs ("Au feeling" / "Par critères",
+   "Le parcours complet" / "Juste un morceau, ou juste un album"). */
+.onboarding-or {
+  margin: -4px 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  text-align: center;
+}
+
+/* Punchline de la page 2 : plus grosse et plus voyante que le footer
+   standard — c'est le message qu'on veut que ça retienne. */
+.onboarding-highlight {
+  margin: 16px 0 0;
+  font-size: 16px;
+  font-weight: 800;
+  font-style: italic;
+  color: var(--gold);
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Fonctionnalité pas encore active : contour en pointillés + étiquette. */
+.onboarding-block-soon {
+  border-style: dashed;
+  border-color: var(--grey);
+  position: relative;
+}
+
+.onboarding-soon-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--grey);
+  color: #171412;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.onboarding-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin: 16px 0 14px;
+}
+
+.onboarding-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--card-border);
+}
+
+.onboarding-dot.active {
+  background: var(--gold);
+}
+
+.onboarding-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Dernière page ("C'est parti !") : bouton plein, prend le reste de la
+   largeur à côté de "Précédent" — inchangé. */
+.onboarding-next {
+  flex: 1;
+  padding: 11px 6px;
+  font-size: 12px;
+}
+
+/* Pages intermédiaires ("Suivant") : aussi compact que "Précédent", pas
+   étiré sur toute la largeur — seule la dernière page reste en pleine
+   largeur (bouton de fin, plus affirmé). */
+.onboarding-next.onboarding-next-compact {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  font-size: 11px;
+}
+
+/* Secondaire, discret : plus petit que "Suivant", gris comme le reste des
+   actions secondaires de l'appli (cf. .link-btn), pas un pavé plein. */
+.onboarding-prev {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--grey);
+  color: var(--grey);
+}
+
+/* --- Réglages : liens secondaires (Aide) --- */
+
+.settings-link {
+  display: block;
+  margin: 0 0 8px;
+}
+
+.settings-link:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Page « Règles de calcul » --- */
+
+.rules-content {
+  padding-top: 4px;
+}
+
+.rules-content h2 {
+  margin: 22px 0 4px;
+  color: var(--gold);
+  font-size: 16px;
+}
+
+.rules-content h2:first-child {
+  margin-top: 8px;
+}
+
+.rules-content h3 {
+  margin: 16px 0 4px;
+  color: var(--white);
+  font-size: 13.5px;
+}
+
+.rules-content p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--white);
+}
+
+.rules-content .rules-note {
+  color: var(--grey);
+  font-size: 12px;
+}
+
+.rules-content .rules-example {
+  border-left: 2px solid var(--gold);
+  padding: 6px 0 6px 12px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--grey);
+  background: rgba(244, 196, 48, 0.06);
+  border-radius: 0 6px 6px 0;
+}
+
+.rules-content hr {
+  border: none;
+  border-top: 1px solid var(--divider);
+  margin: 20px 0;
+}
