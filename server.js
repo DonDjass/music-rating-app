@@ -12,6 +12,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const Database = require("better-sqlite3");
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -25,6 +26,48 @@ const MB_HEADERS = {
 // Profil par défaut : toutes les notations créées AVANT l'ajout du système
 // de profils lui sont rattachées (migration one-shot, cf. plus bas).
 const DEFAULT_PROFILE = "Don";
+
+// --- Rôle administrateur (pas de vrai système de comptes) ---
+// Un seul mot de passe, fourni au lancement via la variable d'environnement
+// ADMIN_PASSWORD (jamais dans le code). Il déverrouille :
+//   - l'accès aux « profils réservés » (par défaut « Don ») ;
+//   - le changement de profil côté client.
+// Sans ADMIN_PASSWORD : mode admin désactivé, aucun profil réservé (= l'appli
+// se comporte comme avant l'ajout des rôles).
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const RESERVED_PROFILES = (process.env.ADMIN_PROFILES || DEFAULT_PROFILE)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const RESERVED_LC = new Set(RESERVED_PROFILES.map((s) => s.toLowerCase()));
+
+function sha256(s) {
+  return crypto.createHash("sha256").update(String(s)).digest();
+}
+
+function safeEqual(a, b) {
+  const ba = Buffer.isBuffer(a) ? a : Buffer.from(String(a), "utf8");
+  const bb = Buffer.isBuffer(b) ? b : Buffer.from(String(b), "utf8");
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
+// Jeton admin : HMAC stable (survit aux redémarrages tant que le mot de passe
+// ne change pas), vérifiable sans stocker de session.
+function adminToken() {
+  return crypto.createHmac("sha256", ADMIN_PASSWORD).update("admin-v1").digest("hex");
+}
+
+function isAdminRequest(req) {
+  if (!ADMIN_PASSWORD) return false;
+  const t = req.headers["x-admin-token"];
+  return typeof t === "string" && safeEqual(t, adminToken());
+}
+
+// Un profil est « réservé » uniquement quand un mot de passe admin est
+// configuré (sinon personne, pas même le propriétaire, ne pourrait l'endosser).
+function isReservedProfile(profile) {
+  return !!ADMIN_PASSWORD && !!profile && RESERVED_LC.has(profile.toLowerCase());
+}
 
 const db = new Database("music.db");
 
@@ -1518,6 +1561,33 @@ const server = http.createServer(async (req, res) => {
     if (needsProfile && !profile) {
       return sendJson(res, 400, { error: "Profil manquant." });
     }
+    // Profil réservé (« Don ») : seul l'administrateur (jeton valide) peut
+    // l'endosser pour lire ou écrire des notations.
+    if (needsProfile && isReservedProfile(profile) && !isAdminRequest(req)) {
+      return sendJson(res, 403, { error: "Ce profil est réservé à l'administrateur." });
+    }
+
+    // --- Rôle admin ---
+    if (pathname === "/api/config" && req.method === "GET") {
+      return sendJson(res, 200, {
+        adminEnabled: !!ADMIN_PASSWORD,
+        reservedProfiles: ADMIN_PASSWORD ? RESERVED_PROFILES : [],
+      });
+    }
+    if (pathname === "/api/admin/login" && req.method === "POST") {
+      if (!ADMIN_PASSWORD) {
+        return sendJson(res, 503, { error: "Connexion admin non configurée." });
+      }
+      const body = await readBody(req);
+      if (!body || !safeEqual(sha256(body.password || ""), sha256(ADMIN_PASSWORD))) {
+        return sendJson(res, 401, { error: "Mot de passe incorrect." });
+      }
+      return sendJson(res, 200, { token: adminToken() });
+    }
+    if (pathname === "/api/admin/check" && req.method === "GET") {
+      const ok = isAdminRequest(req);
+      return sendJson(res, ok ? 200 : 401, { admin: ok });
+    }
 
     const searchCatMatch = pathname.match(/^\/api\/search\/(tracks|albums|artists)$/);
     if (searchCatMatch && req.method === "GET") {
@@ -1667,4 +1737,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Music App — écran de notation dispo sur http://localhost:${PORT}`);
+  if (ADMIN_PASSWORD) {
+    console.log(`Mode admin actif — profil(s) réservé(s) : ${RESERVED_PROFILES.join(", ")}`);
+  } else {
+    console.log(
+      "Mode admin DÉSACTIVÉ (ADMIN_PASSWORD non défini) — aucun profil n'est protégé."
+    );
+  }
 });

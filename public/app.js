@@ -17,16 +17,37 @@ const el = (id) => document.getElementById(id);
 
 // --- Profil léger (pas d'auth) : un pseudo de confort, mémorisé sur l'appareil.
 // Envoyé au serveur dans l'en-tête X-Profile (encodé pour rester ASCII).
+// Le rôle administrateur (mot de passe -> jeton) déverrouille les profils
+// réservés et le changement de profil ; jeton en en-tête X-Admin-Token.
 const PROFILE_KEY = "mr_profile";
+const ADMIN_TOKEN_KEY = "mr_admin_token";
 let profile = null;
+let adminToken = null;
+let appConfig = { adminEnabled: false, reservedProfiles: [] };
 try {
   profile = localStorage.getItem(PROFILE_KEY) || null;
+  adminToken = localStorage.getItem(ADMIN_TOKEN_KEY) || null;
 } catch {
   profile = null;
+  adminToken = null;
 }
 
 function normalizeProfile(s) {
   return (s || "").trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
+function isReservedName(name) {
+  const lc = (name || "").toLowerCase();
+  return appConfig.reservedProfiles.some((r) => r.toLowerCase() === lc);
+}
+
+function storeLocal(key, value) {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* navigation privée : on garde la valeur en mémoire pour la session */
+  }
 }
 
 const tabHome = el("tab-home");
@@ -168,6 +189,7 @@ async function api(path, method, body) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
   if (profile) headers["X-Profile"] = encodeURIComponent(profile);
+  if (adminToken) headers["X-Admin-Token"] = adminToken;
   const res = await fetch(path, {
     method,
     headers: Object.keys(headers).length ? headers : undefined,
@@ -769,8 +791,7 @@ function showHomeView() {
 function showSettingsView() {
   currentSection = "settings";
   updateTabBar();
-  const nameEl = el("settings-profile-name");
-  if (nameEl) nameEl.textContent = profile || "—";
+  refreshProfileUI();
   showOnly(settingsView);
 }
 
@@ -2255,20 +2276,44 @@ async function loadMyRatings() {
   }
 }
 
-// --- Profil : porte d'entrée + changement depuis les Réglages ---
+// --- Profil : porte d'entrée (mode pseudo / mode admin) + Réglages ---
 
 const profileGate = el("profile-gate");
+const gateNormal = el("gate-normal");
+const gateAdmin = el("gate-admin");
 const profileGateInput = el("profile-gate-input");
 const profileGateSubmit = el("profile-gate-submit");
 const profileGateError = el("profile-gate-error");
-const settingsProfileName = el("settings-profile-name");
-const changeProfileBtn = el("change-profile-btn");
+const gateAdminLink = el("gate-admin-link");
+const gateAdminPassword = el("gate-admin-password");
+const gateAdminSubmit = el("gate-admin-submit");
+const gateAdminBack = el("gate-admin-back");
+const gateAdminError = el("gate-admin-error");
 
-function showProfileGate() {
+const settingsRoleEl = el("settings-role");
+const adminSwitchEl = el("admin-switch");
+const adminSwitchInput = el("admin-switch-input");
+const adminSwitchBtn = el("admin-switch-btn");
+const logoutBtn = el("logout-btn");
+const settingsHintNormal = el("settings-hint-normal");
+const settingsHintAdmin = el("settings-hint-admin");
+
+function showGateMode(mode) {
+  gateNormal.hidden = mode !== "normal";
+  gateAdmin.hidden = mode !== "admin";
+}
+
+function showProfileGate(mode = "normal") {
   profileGateInput.value = "";
+  gateAdminPassword.value = "";
   profileGateError.hidden = true;
+  gateAdminError.hidden = true;
+  gateAdminLink.hidden = !appConfig.adminEnabled;
+  showGateMode(mode);
   profileGate.hidden = false;
-  setTimeout(() => profileGateInput.focus(), 50);
+  setTimeout(() => {
+    (mode === "admin" ? gateAdminPassword : profileGateInput).focus();
+  }, 50);
 }
 
 function submitProfile() {
@@ -2278,41 +2323,120 @@ function submitProfile() {
     profileGateError.hidden = false;
     return;
   }
-  profile = val;
-  try {
-    localStorage.setItem(PROFILE_KEY, val);
-  } catch {
-    /* navigation privée : le pseudo tiendra le temps de la session */
+  if (isReservedName(val)) {
+    profileGateError.textContent = "Ce pseudo est réservé. Connecte-toi comme administrateur.";
+    profileGateError.hidden = false;
+    return;
   }
+  profile = val;
+  storeLocal(PROFILE_KEY, val);
   profileGate.hidden = true;
   startApp();
+}
+
+async function submitAdmin() {
+  const pw = gateAdminPassword.value;
+  if (!pw) {
+    gateAdminError.textContent = "Entre le mot de passe.";
+    gateAdminError.hidden = false;
+    return;
+  }
+  try {
+    const { token } = await api("/api/admin/login", "POST", { password: pw });
+    adminToken = token;
+    storeLocal(ADMIN_TOKEN_KEY, token);
+    profile = appConfig.reservedProfiles[0] || normalizeProfile(profile) || "Don";
+    storeLocal(PROFILE_KEY, profile);
+    profileGate.hidden = true;
+    startApp();
+  } catch {
+    gateAdminError.textContent = "Mot de passe incorrect.";
+    gateAdminError.hidden = false;
+  }
 }
 
 profileGateSubmit.addEventListener("click", submitProfile);
 profileGateInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") submitProfile();
 });
-
-changeProfileBtn.addEventListener("click", () => {
-  try {
-    localStorage.removeItem(PROFILE_KEY);
-  } catch {
-    /* ignore */
-  }
-  profile = null;
-  showProfileGate();
+gateAdminLink.addEventListener("click", () => showProfileGate("admin"));
+gateAdminBack.addEventListener("click", () => showProfileGate("normal"));
+gateAdminSubmit.addEventListener("click", submitAdmin);
+gateAdminPassword.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitAdmin();
 });
 
-// --- Démarrage : on commence toujours sur l'écran de recherche, une fois le
-// profil connu (sinon la porte d'entrée le demande d'abord). ---
+// Réglages : affichage selon le rôle.
+function refreshProfileUI() {
+  const isAdmin = !!adminToken;
+  const nameEl = el("settings-profile-name");
+  if (nameEl) nameEl.textContent = profile || "—";
+  if (settingsRoleEl) settingsRoleEl.hidden = !isAdmin;
+  if (adminSwitchEl) adminSwitchEl.hidden = !isAdmin;
+  if (settingsHintNormal) settingsHintNormal.hidden = isAdmin;
+  if (settingsHintAdmin) settingsHintAdmin.hidden = !isAdmin;
+}
+
+adminSwitchBtn.addEventListener("click", () => {
+  const val = normalizeProfile(adminSwitchInput.value);
+  if (!val) return;
+  profile = val;
+  storeLocal(PROFILE_KEY, val);
+  adminSwitchInput.value = "";
+  refreshProfileUI();
+  showToast(`Profil : ${val}`);
+  showSearchView();
+});
+adminSwitchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") adminSwitchBtn.click();
+});
+
+// Déconnexion : normal → efface le pseudo ; admin → efface aussi le jeton.
+// Dans les deux cas, retour à l'écran de connexion, aucune notation supprimée.
+logoutBtn.addEventListener("click", () => {
+  adminToken = null;
+  profile = null;
+  storeLocal(ADMIN_TOKEN_KEY, null);
+  storeLocal(PROFILE_KEY, null);
+  showProfileGate("normal");
+});
+
+// --- Démarrage : on récupère la config (mode admin ?), on valide un éventuel
+// jeton admin mémorisé, puis on ouvre l'appli ou la porte d'entrée. ---
 
 function startApp() {
-  if (settingsProfileName) settingsProfileName.textContent = profile || "—";
+  refreshProfileUI();
   showSearchView();
 }
 
-if (profile) {
-  startApp();
-} else {
-  showProfileGate();
+async function boot() {
+  try {
+    appConfig = await api("/api/config", "GET");
+  } catch {
+    appConfig = { adminEnabled: false, reservedProfiles: [] };
+  }
+
+  if (adminToken) {
+    let valid = false;
+    try {
+      valid = (await api("/api/admin/check", "GET")).admin === true;
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      adminToken = null;
+      storeLocal(ADMIN_TOKEN_KEY, null);
+    }
+  }
+
+  // Profil réservé sans jeton admin valide → on repasse par la porte d'entrée.
+  if (profile && isReservedName(profile) && !adminToken) {
+    profile = null;
+    storeLocal(PROFILE_KEY, null);
+  }
+
+  if (profile) startApp();
+  else showProfileGate("normal");
 }
+
+boot();

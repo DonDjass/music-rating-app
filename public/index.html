@@ -285,11 +285,27 @@
       <div class="settings-card">
         <p class="settings-label">Profil actuel</p>
         <p class="settings-profile" id="settings-profile-name">—</p>
-        <button id="change-profile-btn" type="button" class="link-btn">Changer de profil</button>
-        <p class="settings-hint">
-          Tes notations sont enregistrées sous ce pseudo. « Changer de profil »
-          te déconnecte de cet appareil et redemande un pseudo — tes notations
-          ne sont pas supprimées.
+        <p class="settings-role" id="settings-role" hidden>Administrateur</p>
+
+        <div id="admin-switch" hidden>
+          <label class="settings-label" for="admin-switch-input">Basculer sur un profil</label>
+          <div class="admin-switch-row">
+            <input type="text" id="admin-switch-input" maxlength="40" placeholder="Pseudo"
+                   autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <button id="admin-switch-btn" type="button" class="link-btn">Basculer</button>
+          </div>
+        </div>
+
+        <button id="logout-btn" type="button" class="link-btn">Se déconnecter</button>
+
+        <p class="settings-hint" id="settings-hint-normal" hidden>
+          « Se déconnecter » te ramène à l'écran de connexion. Tes notations
+          restent enregistrées sous ce pseudo et reviennent si tu le ressaisis.
+        </p>
+        <p class="settings-hint" id="settings-hint-admin" hidden>
+          Mode administrateur : « Basculer » change de profil sans quitter le
+          mode admin ; « Se déconnecter » quitte le mode admin. Aucune de ces
+          actions ne supprime de notation.
         </p>
       </div>
     </section>
@@ -413,12 +429,24 @@
        demande un pseudo de confort. Pas de mot de passe. -->
   <div id="profile-gate" class="profile-gate" hidden>
     <div class="profile-gate-card">
-      <h2>Qui es-tu&nbsp;?</h2>
-      <p>Choisis un pseudo pour retrouver tes notations sur cet appareil. Pas de mot de passe.</p>
-      <input type="text" id="profile-gate-input" maxlength="40" placeholder="Ton pseudo"
-             autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <p id="profile-gate-error" class="profile-gate-error" hidden></p>
-      <button id="profile-gate-submit" type="button" class="btn btn-green">Continuer</button>
+      <div id="gate-normal">
+        <h2>Qui es-tu&nbsp;?</h2>
+        <p>Choisis un pseudo pour retrouver tes notations sur cet appareil. Pas de mot de passe.</p>
+        <input type="text" id="profile-gate-input" maxlength="40" placeholder="Ton pseudo"
+               autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <p id="profile-gate-error" class="profile-gate-error" hidden></p>
+        <button id="profile-gate-submit" type="button" class="btn btn-green">Continuer</button>
+        <button id="gate-admin-link" type="button" class="link-btn gate-link" hidden>Je suis l'administrateur</button>
+      </div>
+      <div id="gate-admin" hidden>
+        <h2>Administrateur</h2>
+        <p>Entre le mot de passe administrateur.</p>
+        <input type="password" id="gate-admin-password" placeholder="Mot de passe"
+               autocomplete="current-password" />
+        <p id="gate-admin-error" class="profile-gate-error" hidden></p>
+        <button id="gate-admin-submit" type="button" class="btn btn-green">Se connecter</button>
+        <button id="gate-admin-back" type="button" class="link-btn gate-link">Retour</button>
+      </div>
     </div>
   </div>
 

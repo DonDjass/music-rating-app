@@ -1,0 +1,11 @@
+# Copie ce fichier en « start.ps1 » (gitignoré), mets ton vrai mot de passe,
+# puis lance le serveur avec :  .\start.ps1
+#
+# Le mot de passe administrateur déverrouille le profil réservé « Don » et le
+# changement de profil. Sans lui, l'appli tourne mais aucun profil n'est protégé.
+
+$env:ADMIN_PASSWORD = "choisis-un-mot-de-passe-ici"
+# $env:ADMIN_PROFILES = "Don"   # optionnel : pseudos réservés, séparés par des virgules
+# $env:PORT = "3000"            # optionnel
+
+node server.js

@@ -7,3 +7,6 @@ node_modules/
 # Fichiers système
 .DS_Store
 Thumbs.db
+
+# Script de lancement local (contient le mot de passe administrateur)
+start.ps1

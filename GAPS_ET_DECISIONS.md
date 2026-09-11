@@ -45,11 +45,49 @@ volontairement minimal pour la bêta).
   (l'utilisateur — nom choisi d'après le compte Git `DonDjass` /
   `don.djassi@gmail.com`, cf. sa proposition). Garde-fou : `UPDATE ... WHERE
   profile IS NULL` seulement lors de cette migration.
-- **Changer de profil :** lien discret dans Réglages → efface le pseudo local
-  et rouvre la porte d'entrée. **Ne supprime aucune notation** (elles restent
-  sous l'ancien pseudo, récupérables en le ressaisissant).
 - **Non traité (léger) :** pas de liste de profils, pas de renommage, pas de
   fusion, `search_history` reste global (partagé entre profils).
+
+### Rôle administrateur — demande explicite 2026-09-11
+
+Sans aucun secret, un « rôle » ne protège rien (le client est manipulable :
+console dev, appels directs). Le rôle admin est donc gardé par **un mot de
+passe unique**, fourni au lancement via `ADMIN_PASSWORD` (jamais dans le repo).
+
+- **Deux rôles :**
+  - *Utilisateur normal* : pseudo seul. **Ne peut pas changer de profil**
+    (lien retiré) ni endosser un pseudo réservé.
+  - *Administrateur* (le propriétaire) : pseudo + mot de passe. Peut basculer
+    sur **n'importe quel** profil depuis Réglages (« Basculer »).
+- **Profils réservés :** `ADMIN_PROFILES` (défaut `Don`), comparés **sans
+  casse**. Toute requête de notation avec `X-Profile` = un pseudo réservé et
+  sans jeton admin valide → **403**.
+- **Jeton :** `POST /api/admin/login {password}` → `token` =
+  `HMAC-SHA256(ADMIN_PASSWORD, "admin-v1")` (hex). Vérification *stateless*
+  (`crypto.timingSafeEqual`), stable tant que le mot de passe ne change pas.
+  Client : jeton en `localStorage` (`mr_admin_token`) + en-tête `X-Admin-Token`.
+  `GET /api/admin/check` valide un jeton mémorisé au démarrage ; s'il est
+  invalide (mot de passe changé) le client repasse par la porte d'entrée.
+- **`ADMIN_PASSWORD` non défini :** mode admin désactivé, **aucun profil
+  réservé** (l'appli se comporte comme avant les rôles — compat descendante).
+  Sinon « Don » deviendrait inaccessible faute de pouvoir prouver l'identité.
+- **Se déconnecter / changer de profil :**
+  - **« Se déconnecter »** (Réglages, les deux rôles) : efface le pseudo local
+    (et le jeton si admin), retour à l'écran de connexion. **Aucune notation
+    supprimée.** Un utilisateur normal peut ensuite ressaisir un pseudo (non
+    réservé) — il peut donc toujours endosser un autre pseudo *normal*
+    (usurpation entre normaux = limite assumée), mais jamais « Don ».
+  - **« Basculer »** (Réglages, admin uniquement) : passe sur n'importe quel
+    pseudo *sans quitter le mode admin*.
+- **`GET /api/config`** expose `{ adminEnabled, reservedProfiles }` pour que la
+  porte d'entrée affiche/masque le lien admin et refuse un pseudo réservé
+  côté client (le pseudo admin est donc « découvrable » — accepté : la menace
+  visée est l'écriture, pas la connaissance du nom).
+- **Limites résiduelles assumées (bêta) :** pas de HTTPS en local → mot de
+  passe en clair sur le réseau ; les utilisateurs normaux peuvent toujours
+  s'usurper *entre eux* ; création de pseudos bidons non empêchée.
+- **Lancement (Windows PowerShell) :**
+  `$env:ADMIN_PASSWORD='...'; node server.js`.
 - **Correctif annexe :** `User-Agent` MusicBrainz passé de `contact: test-local`
   à `MonAppNotationMusique/0.1 ( don.djassi@gmail.com )` (format exigé par MB
   pour un usage production).

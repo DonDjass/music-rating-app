@@ -1624,3 +1624,60 @@ input[type="range"]::-moz-range-track {
   line-height: 1.45;
   color: var(--grey);
 }
+
+/* --- Rôle administrateur : badge + bascule de profil dans les Réglages --- */
+
+.settings-role {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #171412;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#admin-switch {
+  margin-bottom: 4px;
+}
+
+#admin-switch .settings-label {
+  margin-top: 4px;
+}
+
+.admin-switch-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.admin-switch-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: #111;
+  color: var(--white);
+  font-size: 14px;
+}
+
+.admin-switch-row input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+#logout-btn {
+  display: block;
+  margin-top: 10px;
+  color: var(--grey);
+}
+
+.gate-link {
+  display: inline-block;
+  margin-top: 12px;
+}

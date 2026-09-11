@@ -428,13 +428,22 @@ plusieurs personnes sur la même instance, notations séparées, sans comptes.
   morceau, fiche album — dont **NOTE MORCEAUX**, fiche artiste), « Mes
   notations » et la mosaïque d'accueil ne montrent et ne calculent qu'à partir
   des notations du pseudo courant.
-- `BR-000XX` — L'utilisateur peut changer de pseudo depuis les Réglages. Cela
-  le déconnecte de l'appareil et redemande un pseudo ; **aucune notation n'est
-  supprimée** (elles restent accessibles en ressaisissant l'ancien pseudo).
 - `BR-000XX` — Les notations créées avant l'introduction des profils sont
   rattachées au pseudo du propriétaire de l'instance.
+- **Rôles :**
+  - `RQ-000XX` — Il existe un rôle **administrateur** (le propriétaire),
+    déverrouillé par un mot de passe unique. Un **utilisateur normal** n'a
+    qu'un pseudo.
+  - `BR-000XX` — Un ou plusieurs pseudos sont **réservés** à l'administrateur :
+    un utilisateur normal ne peut pas les endosser (comparaison insensible à
+    la casse).
+  - `BR-000XX` — Tout utilisateur peut **se déconnecter** (retour à l'écran de
+    connexion). Seul l'administrateur peut **basculer** directement sur un
+    autre pseudo sans se déconnecter. Aucune de ces actions ne supprime de
+    notation.
 - **Hors périmètre (à cadrer plus tard) :** agrégation entre profils,
-  comparaison communautaire (`RQ-00007`), gestion/renommage/fusion de profils.
+  comparaison communautaire (`RQ-00007`), gestion/renommage/fusion de profils,
+  protection des utilisateurs normaux entre eux, transport chiffré (HTTPS).
 
 ---
 
