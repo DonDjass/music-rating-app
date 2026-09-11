@@ -7,6 +7,44 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Nettoyage post-revue (10 correctifs) — 2026-09-11
+
+Suite à une revue de code sur les commits Deezer/profils/rôle admin/Railway
+de la journée, 10 correctifs appliqués (aucun n'était bloquant pour l'usage
+actuel) :
+
+- `db-status`/`db-restore` : le comptage de notations excluait désormais les
+  lignes techniques `profile IS NULL` (cache Deezer d'une entité jamais
+  notée) — sinon le garde-fou `force=1` pouvait se déclencher à tort sur une
+  base sans aucune vraie notation.
+- `boot()` client : un échec réseau de `GET /api/config` ne fait plus
+  démarrer l'appli à l'aveugle sur un pseudo potentiellement réservé (risque
+  de rester bloqué en 403 partout sans explication) — repasse par la porte
+  d'entrée.
+- Casse d'`ADMIN_PROFILES` : `getProfile()` canonicalise désormais la casse
+  envoyée par le client sur celle configurée, pour éviter que « Don » et
+  « don » pointent vers deux lignes distinctes. Limite documentée en
+  commentaire : un changement de casse après la migration one-shot nécessite
+  un `UPDATE` SQL manuel sur les lignes déjà migrées.
+- Vue Recherche : `hidden` ajouté par défaut (elle restait dans le DOM,
+  visible et utilisable, derrière la porte d'entrée au premier accès).
+- Lien Deezer transitoire (`transient: true`, API Deezer momentanément
+  indisponible) : n'affiche plus « Non trouvé » à tort côté client
+  (morceau/album/artiste) — laisse le libellé par défaut, comme documenté.
+- `db-restore` : distingue enfin une vraie coupure réseau pendant l'upload
+  d'un dépassement de taille (l'un et l'autre remontaient « fichier trop
+  volumineux ») ; écriture passée en asynchrone (`fs.promises.writeFile`)
+  pour ne plus bloquer le event loop sur un gros fichier.
+- `wireTrackDeezer` fusionné dans `wireDeezerButton` (callback `onResult`)
+  au lieu de dupliquer toute la logique de jeton anti-réponse-périmée.
+- Liste des routes « profil obligatoire » inversée en liste d'EXCEPTIONS
+  (tout `/api/*` l'exige par défaut, sauf recherche/pochettes/Deezer/
+  historique/résolution/admin/config) — un futur endpoint de notation
+  oublié échoue maintenant en 400 plutôt que de tourner sans profil.
+- Constante `PROFILE_MAX_LENGTH` (40) introduite des deux côtés
+  (`normalizeProfile` / `getProfile`), seule vraie source dupliquée restante
+  faute de module partagé navigateur/serveur.
+
 ## Préparation déploiement Railway (bêta) — 2026-09-11
 
 Décision utilisateur : **pas de HTTP Basic Auth globale** pour cette bêta —

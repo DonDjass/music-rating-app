@@ -46,6 +46,14 @@ const DEFAULT_PROFILE = "Don";
 //   - le changement de profil côté client.
 // Sans ADMIN_PASSWORD : mode admin désactivé, aucun profil réservé (= l'appli
 // se comporte comme avant l'ajout des rôles).
+// ATTENTION casse : la migration one-shot écrit littéralement "Don" (valeur
+// de DEFAULT_PROFILE au moment de la migration) sur les lignes existantes.
+// Si ADMIN_PROFILES est un jour défini avec une casse différente pour ce même
+// profil (ex. "don"), les lignes déjà migrées ne remonteront plus — il
+// faudrait alors un `UPDATE ratings SET profile = '<nouvelle casse>' WHERE
+// profile = 'Don'` manuel. getProfile() canonicalise déjà la casse envoyée
+// par le client sur celle d'ADMIN_PROFILES, mais ne peut pas renommer les
+// lignes déjà en base.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const RESERVED_PROFILES = (process.env.ADMIN_PROFILES || DEFAULT_PROFILE)
   .split(",")
@@ -1536,6 +1544,10 @@ function readBody(req) {
   });
 }
 
+// Dupliqué côté client (normalizeProfile, public/app.js) — pas de module
+// partagé navigateur/serveur ici ; garder les deux synchronisés à la main.
+const PROFILE_MAX_LENGTH = 40;
+
 // Profil courant : pseudo transmis par le client dans l'en-tête X-Profile
 // (encodé avec encodeURIComponent pour rester ASCII même avec des accents).
 // Renvoie null si absent/vide → les endpoints de notation répondent 400.
@@ -1548,8 +1560,14 @@ function getProfile(req) {
   } catch {
     decoded = raw;
   }
-  const p = decoded.trim().replace(/\s+/g, " ").slice(0, 40);
-  return p || null;
+  let p = decoded.trim().replace(/\s+/g, " ").slice(0, PROFILE_MAX_LENGTH);
+  if (!p) return null;
+  // Un pseudo réservé est toujours utilisé avec la casse canonique
+  // d'ADMIN_PROFILES, quelle que soit la casse envoyée par le client —
+  // sinon "Don" et "don" pointeraient vers deux lignes `ratings` distinctes
+  // alors que isReservedProfile() les traite comme le même profil réservé.
+  const canonical = RESERVED_PROFILES.find((r) => r.toLowerCase() === p.toLowerCase());
+  return canonical || p;
 }
 
 const MIME_TYPES = {
@@ -1590,13 +1608,32 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const pathname = url.pathname;
 
-    // Profil (pseudo léger, pas d'auth). Requis par tous les endpoints qui
-    // lisent/écrivent des notations — pas par la recherche, les pochettes,
-    // le lien Deezer ni l'historique.
+    // Profil (pseudo léger, pas d'auth). Échec sûr : tout /api/* exige un
+    // profil PAR DÉFAUT, sauf la liste explicite ci-dessous (recherche,
+    // pochettes, lien Deezer, historique, résolution nom→MusicBrainz, config
+    // et endpoints admin — rien qui lise/écrive des notations). Un nouvel
+    // endpoint de notation oublié ici échoue donc en 400 plutôt que de
+    // lire/écrire silencieusement sans profil ; c'est la liste d'EXCEPTION
+    // qu'il faut penser à compléter pour un futur endpoint non lié aux
+    // notations, pas l'inverse.
+    const PROFILE_EXEMPT_PREFIXES = ["/api/search/"];
+    const PROFILE_EXEMPT_PATHS = new Set([
+      "/api/config",
+      "/api/admin/login",
+      "/api/admin/check",
+      "/api/admin/db-status",
+      "/api/admin/db-restore",
+      "/api/cover",
+      "/api/deezer-link",
+      "/api/search-history",
+      "/api/resolve-artist",
+      "/api/resolve-album",
+    ]);
     const profile = getProfile(req);
     const needsProfile =
-      /^\/api\/(tracks|albums)\//.test(pathname) ||
-      ["/api/my-ratings", "/api/home", "/api/artist", "/api/album-tracks"].includes(pathname);
+      pathname.startsWith("/api/") &&
+      !PROFILE_EXEMPT_PATHS.has(pathname) &&
+      !PROFILE_EXEMPT_PREFIXES.some((p) => pathname.startsWith(p));
     if (needsProfile && !profile) {
       return sendJson(res, 400, { error: "Profil manquant." });
     }
@@ -1640,7 +1677,12 @@ const server = http.createServer(async (req, res) => {
       } catch {
         /* fichier pas encore créé */
       }
-      const ratingsCount = db.prepare(`SELECT COUNT(*) AS n FROM ratings`).get().n;
+      // `profile IS NOT NULL` : exclut les lignes techniques (cache Deezer
+      // d'un album/artiste jamais noté, cf. cacheDeezerResult) pour ne
+      // compter que des notations réelles.
+      const ratingsCount = db
+        .prepare(`SELECT COUNT(*) AS n FROM ratings WHERE profile IS NOT NULL`)
+        .get().n;
       return sendJson(res, 200, {
         path: DB_PATH,
         sizeBytes,
@@ -1659,7 +1701,9 @@ const server = http.createServer(async (req, res) => {
       if (!isAdminRequest(req)) {
         return sendJson(res, 403, { error: "Réservé à l'administrateur." });
       }
-      const currentCount = db.prepare(`SELECT COUNT(*) AS n FROM ratings`).get().n;
+      const currentCount = db
+        .prepare(`SELECT COUNT(*) AS n FROM ratings WHERE profile IS NOT NULL`)
+        .get().n;
       if (currentCount > 0 && url.searchParams.get("force") !== "1") {
         return sendJson(res, 409, {
           error: `La base actuelle contient déjà ${currentCount} ligne(s). Ajoute ?force=1 à l'URL pour remplacer quand même.`,
@@ -1671,17 +1715,27 @@ const server = http.createServer(async (req, res) => {
       try {
         for await (const chunk of req) {
           total += chunk.length;
-          if (total > MAX_BYTES) throw new Error("too_large");
+          if (total > MAX_BYTES) {
+            const err = new Error("Fichier trop volumineux.");
+            err.tooLarge = true;
+            throw err;
+          }
           chunks.push(chunk);
         }
-      } catch {
-        return sendJson(res, 413, { error: "Fichier trop volumineux." });
+      } catch (err) {
+        if (err && err.tooLarge) {
+          return sendJson(res, 413, { error: "Fichier trop volumineux." });
+        }
+        // Coupure réseau ou autre échec du flux (pas une histoire de taille) :
+        // ne pas mentir sur la cause.
+        console.error("db-restore : échec de lecture du flux :", err);
+        return sendJson(res, 400, { error: "Échec de la réception du fichier. Réessaie." });
       }
       const buf = Buffer.concat(chunks);
       if (buf.length < 16 || buf.toString("latin1", 0, 15) !== "SQLite format 3") {
         return sendJson(res, 400, { error: "Fichier invalide : ce n'est pas une base SQLite." });
       }
-      fs.writeFileSync(pendingUpload, buf);
+      await fs.promises.writeFile(pendingUpload, buf);
       return sendJson(res, 200, {
         ok: true,
         bytes: buf.length,

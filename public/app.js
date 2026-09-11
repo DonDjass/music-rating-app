@@ -21,6 +21,9 @@ const el = (id) => document.getElementById(id);
 // réservés et le changement de profil ; jeton en en-tête X-Admin-Token.
 const PROFILE_KEY = "mr_profile";
 const ADMIN_TOKEN_KEY = "mr_admin_token";
+// Dupliqué côté serveur (PROFILE_MAX_LENGTH, server.js) — pas de module
+// partagé navigateur/serveur ici ; garder les deux synchronisés à la main.
+const PROFILE_MAX_LENGTH = 40;
 let profile = null;
 let adminToken = null;
 let appConfig = { adminEnabled: false, reservedProfiles: [] };
@@ -33,7 +36,7 @@ try {
 }
 
 function normalizeProfile(s) {
-  return (s || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  return (s || "").trim().replace(/\s+/g, " ").slice(0, PROFILE_MAX_LENGTH);
 }
 
 function isReservedName(name) {
@@ -286,8 +289,12 @@ function deezerQs(params) {
   return new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
 }
 
-// Album / artiste : simple deep link (pas d'extrait).
-async function wireDeezerButton(btn, params, defaultLabel) {
+// Câble un bouton « Écouter » (deep link Deezer résolu et mémorisé côté
+// serveur, cf. /api/deezer-link). `onResult` (optionnel) reçoit la réponse
+// brute quand elle arrive à temps (jeton toujours d'actualité) — utilisé par
+// wireTrackDeezer pour câbler aussi le bouton « Extrait » à partir du même
+// appel, sans dupliquer la garde anti-réponse-périmée ni le fetch.
+async function wireDeezerButton(btn, params, defaultLabel, onResult) {
   const token = String(Date.now() + Math.random());
   btn.dataset.dzToken = token;
   btn.classList.remove("dz-ready", "dz-none");
@@ -297,16 +304,20 @@ async function wireDeezerButton(btn, params, defaultLabel) {
   if (!params.mbid) return;
 
   try {
-    const { url } = await api(`/api/deezer-link?${deezerQs(params)}`, "GET");
+    const result = await api(`/api/deezer-link?${deezerQs(params)}`, "GET");
     if (btn.dataset.dzToken !== token) return;
 
+    const { url, transient } = result;
     if (url) {
       btn.classList.add("dz-ready");
       btn.onclick = () => window.open(url, "_blank", "noopener");
-    } else {
+    } else if (!transient) {
+      // `transient` = recherche momentanément indisponible (Deezer down) :
+      // pas une non-correspondance confirmée, on laisse le libellé par défaut.
       btn.classList.add("dz-none");
       btn.textContent = "Non trouvé sur Deezer";
     }
+    if (onResult) onResult(result);
   } catch {
     // Recherche indisponible : on laisse le libellé par défaut (non bloquant).
   }
@@ -347,48 +358,30 @@ function togglePreview() {
   }
 }
 
-// Fiche morceau : câble le bouton « Écouter » (deep link) ET le bouton
-// « Extrait » (lecture in-page) à partir d'un seul appel /api/deezer-link.
-async function wireTrackDeezer(mbid, title, artist) {
-  const token = String(Date.now() + Math.random());
-  trackPlayBtn.dataset.dzToken = token;
-
+// Fiche morceau : câble le bouton « Écouter » (deep link, via
+// wireDeezerButton) ET le bouton « Extrait » (lecture in-page) à partir du
+// même appel /api/deezer-link, sous la même garde anti-réponse-périmée.
+function wireTrackDeezer(mbid, title, artist) {
   stopPreview();
-  trackPlayBtn.classList.remove("dz-ready", "dz-none");
-  trackPlayBtn.onclick = null;
-  trackPlayBtn.textContent = "▶ Écouter";
   trackPreviewBtn.classList.remove("dz-ready", "dz-none", "is-playing");
   trackPreviewBtn.onclick = null;
   delete trackPreviewBtn.dataset.previewUrl;
   trackPreviewBtn.textContent = "▶ Extrait";
 
-  if (!mbid) return;
-
-  try {
-    const { url, preview } = await api(
-      `/api/deezer-link?${deezerQs({ type: "track", mbid, title, artist })}`,
-      "GET"
-    );
-    if (trackPlayBtn.dataset.dzToken !== token) return;
-
-    if (url) {
-      trackPlayBtn.classList.add("dz-ready");
-      trackPlayBtn.onclick = () => window.open(url, "_blank", "noopener");
-    } else {
-      trackPlayBtn.classList.add("dz-none");
-      trackPlayBtn.textContent = "Non trouvé sur Deezer";
+  return wireDeezerButton(
+    trackPlayBtn,
+    { type: "track", mbid, title, artist },
+    "▶ Écouter",
+    ({ preview, transient }) => {
+      if (preview) {
+        trackPreviewBtn.classList.add("dz-ready");
+        trackPreviewBtn.dataset.previewUrl = preview;
+        trackPreviewBtn.onclick = togglePreview;
+      } else if (!transient) {
+        trackPreviewBtn.classList.add("dz-none");
+      }
     }
-
-    if (preview) {
-      trackPreviewBtn.classList.add("dz-ready");
-      trackPreviewBtn.dataset.previewUrl = preview;
-      trackPreviewBtn.onclick = togglePreview;
-    } else {
-      trackPreviewBtn.classList.add("dz-none");
-    }
-  } catch {
-    // Non bloquant : les deux boutons gardent leur libellé par défaut.
-  }
+  );
 }
 
 // --- En-tête qui se réduit : la pochette défile, le bloc MA NOTATION +
@@ -2289,6 +2282,7 @@ const profileGate = el("profile-gate");
 const gateNormal = el("gate-normal");
 const gateAdmin = el("gate-admin");
 const profileGateInput = el("profile-gate-input");
+profileGateInput.maxLength = PROFILE_MAX_LENGTH; // synchronisé avec normalizeProfile ci-dessus
 const profileGateSubmit = el("profile-gate-submit");
 const profileGateError = el("profile-gate-error");
 const gateAdminLink = el("gate-admin-link");
@@ -2300,6 +2294,7 @@ const gateAdminError = el("gate-admin-error");
 const settingsRoleEl = el("settings-role");
 const adminSwitchEl = el("admin-switch");
 const adminSwitchInput = el("admin-switch-input");
+adminSwitchInput.maxLength = PROFILE_MAX_LENGTH;
 const adminSwitchBtn = el("admin-switch-btn");
 const logoutBtn = el("logout-btn");
 const settingsHintNormal = el("settings-hint-normal");
@@ -2417,9 +2412,11 @@ function startApp() {
 }
 
 async function boot() {
+  let configOk = true;
   try {
     appConfig = await api("/api/config", "GET");
   } catch {
+    configOk = false;
     appConfig = { adminEnabled: false, reservedProfiles: [] };
   }
 
@@ -2434,6 +2431,16 @@ async function boot() {
       adminToken = null;
       storeLocal(ADMIN_TOKEN_KEY, null);
     }
+  }
+
+  // /api/config a échoué (réseau) et on ne peut pas vérifier si le pseudo
+  // mémorisé est réservé : mieux vaut repasser par la porte d'entrée que de
+  // démarrer à l'aveugle sur un profil qui pourrait être bloqué en 403
+  // partout, sans un seul indice pour l'utilisateur.
+  if (!configOk && profile && !adminToken) {
+    showToast("Connexion au serveur impossible. Réessaie.");
+    showProfileGate("normal");
+    return;
   }
 
   // Profil réservé sans jeton admin valide → on repasse par la porte d'entrée.
