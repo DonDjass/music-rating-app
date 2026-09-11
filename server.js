@@ -13,7 +13,19 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+
+// Diagnostic d'environnement AVANT le require du module natif : si celui-ci
+// segfault au chargement (mauvais binaire précompilé pour la plateforme), ces
+// lignes seront la dernière chose visible dans les logs de déploiement.
+console.log(
+  `Environnement : node ${process.version} — ${process.platform}/${process.arch}` +
+    (process.platform === "linux"
+      ? ` — glibc ${process.report.getReport().header.glibcVersionRuntime || "absent (musl ?)"}`
+      : "")
+);
+
 const Database = require("better-sqlite3");
+console.log("better-sqlite3 chargé.");
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
