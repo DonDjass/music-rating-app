@@ -15,6 +15,20 @@ let criteriaDraft = { performance: null, texte: null, production: null };
 
 const el = (id) => document.getElementById(id);
 
+// --- Profil léger (pas d'auth) : un pseudo de confort, mémorisé sur l'appareil.
+// Envoyé au serveur dans l'en-tête X-Profile (encodé pour rester ASCII).
+const PROFILE_KEY = "mr_profile";
+let profile = null;
+try {
+  profile = localStorage.getItem(PROFILE_KEY) || null;
+} catch {
+  profile = null;
+}
+
+function normalizeProfile(s) {
+  return (s || "").trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
 const tabHome = el("tab-home");
 const tabSearch = el("tab-search");
 const tabMyRatings = el("tab-my-ratings");
@@ -151,9 +165,12 @@ function trackApiPath(suffix = "") {
 }
 
 async function api(path, method, body) {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (profile) headers["X-Profile"] = encodeURIComponent(profile);
   const res = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error("Erreur réseau");
@@ -752,6 +769,8 @@ function showHomeView() {
 function showSettingsView() {
   currentSection = "settings";
   updateTabBar();
+  const nameEl = el("settings-profile-name");
+  if (nameEl) nameEl.textContent = profile || "—";
   showOnly(settingsView);
 }
 
@@ -2236,6 +2255,64 @@ async function loadMyRatings() {
   }
 }
 
-// --- Démarrage : on commence toujours sur l'écran de recherche ---
+// --- Profil : porte d'entrée + changement depuis les Réglages ---
 
-showSearchView();
+const profileGate = el("profile-gate");
+const profileGateInput = el("profile-gate-input");
+const profileGateSubmit = el("profile-gate-submit");
+const profileGateError = el("profile-gate-error");
+const settingsProfileName = el("settings-profile-name");
+const changeProfileBtn = el("change-profile-btn");
+
+function showProfileGate() {
+  profileGateInput.value = "";
+  profileGateError.hidden = true;
+  profileGate.hidden = false;
+  setTimeout(() => profileGateInput.focus(), 50);
+}
+
+function submitProfile() {
+  const val = normalizeProfile(profileGateInput.value);
+  if (!val) {
+    profileGateError.textContent = "Entre un pseudo pour continuer.";
+    profileGateError.hidden = false;
+    return;
+  }
+  profile = val;
+  try {
+    localStorage.setItem(PROFILE_KEY, val);
+  } catch {
+    /* navigation privée : le pseudo tiendra le temps de la session */
+  }
+  profileGate.hidden = true;
+  startApp();
+}
+
+profileGateSubmit.addEventListener("click", submitProfile);
+profileGateInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitProfile();
+});
+
+changeProfileBtn.addEventListener("click", () => {
+  try {
+    localStorage.removeItem(PROFILE_KEY);
+  } catch {
+    /* ignore */
+  }
+  profile = null;
+  showProfileGate();
+});
+
+// --- Démarrage : on commence toujours sur l'écran de recherche, une fois le
+// profil connu (sinon la porte d'entrée le demande d'abord). ---
+
+function startApp() {
+  if (settingsProfileName) settingsProfileName.textContent = profile || "—";
+  showSearchView();
+}
+
+if (profile) {
+  startApp();
+} else {
+  showProfileGate();
+}

@@ -7,6 +7,53 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Profils légers (multi-utilisateurs sans auth) — demande explicite 2026-09-11
+
+Objectif : plusieurs personnes utilisent la même instance avec des notations
+séparées, **sans vrai système de comptes** (préfigure GD-00001 / RQ-00006,
+volontairement minimal pour la bêta).
+
+- **Identité = un pseudo de confort.** Pas de mot de passe. Au premier accès
+  (aucun pseudo sur l'appareil) une porte d'entrée plein écran le demande ;
+  il est mémorisé en `localStorage` (`mr_profile`). Repli mémoire si
+  `localStorage` indisponible (navigation privée).
+- **Transport :** en-tête HTTP `X-Profile` sur chaque appel API, valeur passée
+  par `encodeURIComponent` (reste ASCII même avec accents/emoji), décodée côté
+  serveur. Normalisation : trim + espaces compactés + 40 caractères max.
+  Comparaison **sensible à la casse** (« Don » ≠ « don ») — assumé pour rester
+  simple.
+- **Modèle de données :** une colonne `profile` sur `ratings`. La clé logique
+  d'une notation devient `(mbid, profile)` : `getOrCreateTrackRow` /
+  `getOrCreateAlbumRow` et toutes les lectures filtrent sur le profil courant.
+  `rating_criteria` suit automatiquement (FK sur `ratings.id`).
+- **Lectures adaptées (filtre `profile = ?`) :** fiche morceau, fiche album (y
+  compris **« Notation morceaux » = moyenne des morceaux notés par CE profil**,
+  `albumTrackStats`), fiche artiste (discographie notée + top titres + « J'aime »),
+  « Mes notations », mosaïque d'accueil. Le recalcul auto d'album
+  (`recomputeAlbumForRelease`) se fait dans le périmètre d'un seul profil.
+- **Serveur :** les endpoints de notation (`/api/tracks/*`, `/api/albums/*`,
+  `/api/my-ratings`, `/api/home`, `/api/artist`, `/api/album-tracks`) répondent
+  **400 « Profil manquant. »** sans en-tête `X-Profile`. Recherche, pochettes,
+  lien Deezer et historique restent hors périmètre profil.
+- **Cache Deezer profile-agnostic :** `deezer_id` / `deezer_preview_url` ne
+  dépendent pas de la personne → `cacheDeezerResult` réutilise n'importe quelle
+  ligne du mbid, ou crée une ligne technique `profile IS NULL` (invisible des
+  lectures de notations). Léger surcoût : chaque profil peut redéclencher une
+  résolution Deezer une fois.
+- **Migration one-shot :** à l'apparition de la colonne `profile`, toutes les
+  notations existantes (264 lignes) sont rattachées au profil **« Don »**
+  (l'utilisateur — nom choisi d'après le compte Git `DonDjass` /
+  `don.djassi@gmail.com`, cf. sa proposition). Garde-fou : `UPDATE ... WHERE
+  profile IS NULL` seulement lors de cette migration.
+- **Changer de profil :** lien discret dans Réglages → efface le pseudo local
+  et rouvre la porte d'entrée. **Ne supprime aucune notation** (elles restent
+  sous l'ancien pseudo, récupérables en le ressaisissant).
+- **Non traité (léger) :** pas de liste de profils, pas de renommage, pas de
+  fusion, `search_history` reste global (partagé entre profils).
+- **Correctif annexe :** `User-Agent` MusicBrainz passé de `contact: test-local`
+  à `MonAppNotationMusique/0.1 ( don.djassi@gmail.com )` (format exigé par MB
+  pour un usage production).
+
 ## Modèle de données — table `ratings` générique + table `rating_criteria` séparée — DÉCISION D'ARCHITECTURE CONFIRMÉE (2026-09-08)
 
 **Ce n'est pas un écart au spec ni un choix provisoire : c'est la cible

@@ -414,6 +414,28 @@ absent de la maquette).
   durablement au-delà de cette URL et de l'identifiant. Grisé si le morceau
   n'a pas d'extrait. Non prévu pour album/artiste (Deezer n'en fournit pas).
 
+## B10. Profils légers (multi-utilisateurs sans authentification)
+
+**Contexte :** version minimale de GD-00001 / `RQ-00006` pour la bêta —
+plusieurs personnes sur la même instance, notations séparées, sans comptes.
+
+**Business Rules proposées :**
+- `RQ-000XX` — Au premier accès sur un appareil, l'utilisateur saisit un pseudo
+  (texte libre, pas de mot de passe). Le pseudo est mémorisé sur l'appareil et
+  n'est plus redemandé.
+- `BR-000XX` — Toutes les notations (feeling, critères, Classic, J'aime, note
+  d'album) sont rattachées au pseudo courant. Les écrans « ma notation » (fiche
+  morceau, fiche album — dont **NOTE MORCEAUX**, fiche artiste), « Mes
+  notations » et la mosaïque d'accueil ne montrent et ne calculent qu'à partir
+  des notations du pseudo courant.
+- `BR-000XX` — L'utilisateur peut changer de pseudo depuis les Réglages. Cela
+  le déconnecte de l'appareil et redemande un pseudo ; **aucune notation n'est
+  supprimée** (elles restent accessibles en ressaisissant l'ancien pseudo).
+- `BR-000XX` — Les notations créées avant l'introduction des profils sont
+  rattachées au pseudo du propriétaire de l'instance.
+- **Hors périmètre (à cadrer plus tard) :** agrégation entre profils,
+  comparaison communautaire (`RQ-00007`), gestion/renommage/fusion de profils.
+
 ---
 
 # PARTIE C — Points volontairement laissés hors spec (ne pas spécifier maintenant)
@@ -421,10 +443,11 @@ absent de la maquette).
 - **Badge « noteur » communautaire** sur les tuiles d'accueil (coin
   haut-droite réservé) — dépend de GD-00001 / `RQ-00006` (référentiel
   communautaire) et d'une notion de compte.
-- **Comptes utilisateurs / authentification** — l'application est
-  mono-utilisateur implicite. Prérequis de `RQ-00006` (agrégation
-  communautaire), `RQ-00007` (comparer avec la communauté / un autre
-  utilisateur), `RQ-00077` (partage).
+- **Comptes utilisateurs / authentification** — les profils légers (B10)
+  séparent les notations par pseudo mais sans authentification. Un vrai
+  système de comptes reste prérequis de `RQ-00006` (agrégation communautaire),
+  `RQ-00007` (comparer avec la communauté / un autre utilisateur), `RQ-00077`
+  (partage).
 - **Notation « au feeling » et « par critères » d'un album / d'un artiste** —
   la mécanique existe (bloc à 4 notes) mais ces 2 notes sont des placeholders.
   Les jeux de critères album / artiste restent à définir.

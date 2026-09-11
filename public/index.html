@@ -282,7 +282,16 @@
 
     <section id="settings-view" hidden>
       <h1 class="search-title">Réglages</h1>
-      <p class="placeholder-msg">Bientôt disponible.</p>
+      <div class="settings-card">
+        <p class="settings-label">Profil actuel</p>
+        <p class="settings-profile" id="settings-profile-name">—</p>
+        <button id="change-profile-btn" type="button" class="link-btn">Changer de profil</button>
+        <p class="settings-hint">
+          Tes notations sont enregistrées sous ce pseudo. « Changer de profil »
+          te déconnecte de cet appareil et redemande un pseudo — tes notations
+          ne sont pas supprimées.
+        </p>
+      </div>
     </section>
 
     <section id="my-ratings-view" hidden>
@@ -399,6 +408,19 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <!-- Porte d'entrée : au premier accès (aucun pseudo sur cet appareil), on
+       demande un pseudo de confort. Pas de mot de passe. -->
+  <div id="profile-gate" class="profile-gate" hidden>
+    <div class="profile-gate-card">
+      <h2>Qui es-tu&nbsp;?</h2>
+      <p>Choisis un pseudo pour retrouver tes notations sur cet appareil. Pas de mot de passe.</p>
+      <input type="text" id="profile-gate-input" maxlength="40" placeholder="Ton pseudo"
+             autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <p id="profile-gate-error" class="profile-gate-error" hidden></p>
+      <button id="profile-gate-submit" type="button" class="btn btn-green">Continuer</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
