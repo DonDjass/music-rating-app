@@ -7,6 +7,33 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Préparation déploiement Railway (bêta) — 2026-09-11
+
+Décision utilisateur : **pas de HTTP Basic Auth globale** pour cette bêta —
+le système profils + rôle admin déjà en place est jugé suffisant, l'URL
+`beta.applicalbum.com` ne sera partagée qu'à des amis de confiance. Détails
+et étapes manuelles exactes : `HEBERGEMENT.md` §§ 6-8.
+
+- **`robots.txt`** (`public/robots.txt`, `Disallow: /`) : réduit le risque de
+  découverte accidentelle par un moteur de recherche. N'importe qui connaissant
+  l'URL y accède quand même (pas un contrôle d'accès).
+- **`DB_PATH`** (env, défaut `music.db`) : indirection nécessaire pour pointer
+  vers un fichier sur un volume persistant (`/data/music.db` sur Railway) —
+  sans ça, `music.db` vivrait sur le disque éphémère du conteneur et serait
+  perdu à chaque redéploiement.
+- **`POST /api/admin/db-restore`** : seul moyen prévu pour déposer le
+  `music.db` réel (gitignoré, jamais dans le repo) sur le volume Railway —
+  pas d'accès shell/SFTP simple sur ce type d'hébergement. Corps brut protégé
+  par le jeton admin ; n'écrit jamais la base ouverte (dépose
+  `music.db.upload`, installé seulement au redémarrage suivant, ancien
+  fichier conservé en `.bak-<timestamp>`) ; refuse si la base courante a déjà
+  des lignes sauf `?force=1` (garde-fou anti-écrasement accidentel une fois la
+  bêta réellement utilisée). `GET /api/admin/db-status` pour vérifier l'état
+  sans accès serveur.
+- **`package.json`** : ajout de `name`/`version`/`private`/`engines.node`
+  (absents jusqu'ici) — `engines.node` pour que Railway (Nixpacks) choisisse
+  une version de Node compatible avec le module natif `better-sqlite3`.
+
 ## Profils légers (multi-utilisateurs sans auth) — demande explicite 2026-09-11
 
 Objectif : plusieurs personnes utilisent la même instance avec des notations

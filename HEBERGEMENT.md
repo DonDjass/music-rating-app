@@ -105,12 +105,117 @@ fournissent la cible et le certificat TLS automatiquement.
 ## 5. Rappels avant mise en ligne (quel que soit l'hébergeur)
 
 - `server.js` honore déjà `process.env.PORT`.
-- **`User-Agent` MusicBrainz** encore en `contact: test-local` → à remplacer par
-  un contact réel (exigé par MusicBrainz en production).
-- **Aucune authentification** : une URL publique laisse **tout le monde
-  consulter *et modifier*** les notations. Mitiger via tunnel privé, HTTP basic
-  auth, ou la vraie fonctionnalité comptes de la spec (GD-00001 / RQ-00006).
-- **`music.db` est gitignoré** → upload manuel unique sur le volume persistant.
+- ✅ `User-Agent` MusicBrainz corrigé (contact réel).
+- ✅ Profils légers + rôle admin (2026-09-11) : ce n'est **pas une
+  authentification classique**, mais suffisant pour cette bêta fermée
+  (décision utilisateur) — voir § 7 pour la configuration `ADMIN_PASSWORD`.
+- `music.db` est gitignoré → restauration via `/api/admin/db-restore` (§ 7),
+  pas de copie manuelle de fichier nécessaire.
+- `robots.txt` (`Disallow: /`) réduit le risque de découverte accidentelle de
+  l'URL, mais ne remplace pas un vrai contrôle d'accès si l'URL fuit.
+
+## 6. Préparation du code — fait (2026-09-11)
+
+- **`DB_PATH`** (variable d'environnement, défaut `music.db`) : chemin du
+  fichier SQLite. En local, inchangé. Sur un hébergeur à volume, pointer vers
+  un fichier **à l'intérieur du volume monté** (ex. `/data/music.db`) — sinon
+  les notations sont perdues à chaque redéploiement (disque du conteneur
+  éphémère). Le dossier est créé automatiquement s'il n'existe pas encore.
+- **`ADMIN_PASSWORD`** / **`ADMIN_PROFILES`** : déjà lus via `process.env`
+  (rôle admin, cf. `GAPS_ET_DECISIONS.md` § « Rôle administrateur »).
+- **`PORT`** : déjà lu via `process.env.PORT`, et le serveur écoute sur toutes
+  les interfaces (obligatoire pour Railway).
+- **Restauration de `music.db`** (le fichier est gitignoré, jamais dans le
+  repo) : `POST /api/admin/db-restore` reçoit le fichier en corps brut,
+  protégé par `X-Admin-Token`. Il ne touche jamais la base déjà ouverte : le
+  fichier reçu est posé à côté (`music.db.upload`) et n'est installé qu'au
+  **prochain démarrage** du service (l'ancien fichier est conservé en
+  `.bak-<timestamp>`, jamais supprimé). Refuse si la base courante contient
+  déjà des notations, sauf `?force=1`. `GET /api/admin/db-status` renvoie
+  `{ path, sizeBytes, ratingsCount, pendingRestore }` pour vérifier l'état
+  sans accès au serveur.
+- `package.json` : `engines.node` ajouté (`>=20`) pour que Railway installe
+  une version de Node compatible avec le module natif `better-sqlite3` ;
+  `package-lock.json` déjà présent (build reproductible).
+- Testé en local avec un `DB_PATH` de test : dépôt du fichier, redémarrage,
+  bascule effective, garde-fou `force`, rejet d'un fichier non-SQLite —
+  tous vérifiés avant cette livraison.
+
+## 7. Étapes manuelles — Railway
+
+1. **Compte** : sur [railway.com](https://railway.com), s'inscrire (GitHub
+   recommandé, ça simplifie l'étape suivante).
+2. **Nouveau projet** : *New Project* → *Deploy from GitHub repo* → choisir
+   `music-rating-app`. Railway détecte un projet Node (grâce à `package.json`)
+   et propose *Deploy Now* — laisser faire, le premier déploiement peut
+   échouer faute de variables d'environnement, ce n'est pas grave à ce stade.
+3. **Variables d'environnement** : sur le service créé, onglet *Variables* :
+   - `ADMIN_PASSWORD` = ton vrai mot de passe (choisis-en un solide, c'est la
+     seule chose qui protège le profil « Don »).
+   - `DB_PATH` = `/data/music.db`.
+   - (`PORT` : ne pas la définir — Railway l'injecte automatiquement et le
+     code la lit déjà.)
+4. **Volume persistant** : bouton *+ New* (dans le canevas du projet, pas dans
+   Variables) → *Volume* → l'attacher au service → *Mount path* =
+   `/data` (le même dossier que dans `DB_PATH` ci-dessus, sans le nom de
+   fichier).
+5. **Redéployer** : après avoir ajouté variables + volume, redéclencher un
+   déploiement (*Deploy* en haut à droite, ou un nouveau commit/push). Vérifier
+   dans les *Logs* la ligne `Mode admin actif — profil(s) réservé(s) : Don` —
+   confirme que `ADMIN_PASSWORD` est bien pris en compte.
+6. **URL Railway temporaire** : dans *Settings* → *Networking*, cliquer
+   *Generate Domain* pour obtenir une URL `*.up.railway.app` de test — sert à
+   vérifier que tout fonctionne avant de brancher le domaine.
+7. **Restaurer `music.db`** (une fois l'app accessible sur son URL Railway) :
+   depuis ta machine, dans le dossier du projet :
+   ```powershell
+   curl.exe -X POST -H "X-Admin-Token: <jeton>" --data-binary "@music.db" https://<ton-url-railway>.up.railway.app/api/admin/db-restore
+   ```
+   Le `<jeton>` s'obtient une fois avec :
+   ```powershell
+   curl.exe -X POST -H "Content-Type: application/json" -d "{\"password\":\"<ADMIN_PASSWORD>\"}" https://<ton-url-railway>.up.railway.app/api/admin/login
+   ```
+   Vérifier avec `GET /api/admin/db-status` (même en-tête `X-Admin-Token`)
+   que `pendingRestore: true`, puis **redémarrer le service** dans Railway
+   (menu ⋯ du service → *Restart*) pour l'installer. Revérifier
+   `db-status` : `ratingsCount` doit correspondre à tes notations réelles.
+8. **Custom domain** : *Settings* → *Networking* → *+ Custom Domain* → entrer
+   `beta.applicalbum.com`. Railway affiche alors un enregistrement **CNAME**
+   et un enregistrement **TXT** à créer — copie leurs valeurs exactes, elles
+   sont propres à ton déploiement (cf. § 8).
+9. Une fois le DNS propagé, Railway émet automatiquement le certificat TLS —
+   pas d'action supplémentaire.
+
+## 8. Configuration DNS — IONOS
+
+Railway génère les valeurs exactes des 2 enregistrements à l'étape 8
+ci-dessus (elles changent à chaque domaine) : **recopie ce que Railway
+affiche**, ce qui suit est le chemin pour aller les saisir chez IONOS.
+
+1. Espace client IONOS → **Domaines & SSL** → sur la ligne du domaine
+   `applicalbum.com`, icône ⚙ (Actions) → **DNS**.
+2. **Ajouter un enregistrement** :
+   - Type : `CNAME`
+   - Nom d'hôte (*Hostname*) : `beta`
+   - Pointe vers (*Points to*) : la valeur `xxxxx.up.railway.app` fournie par
+     Railway
+   - TTL : valeur par défaut
+   - Enregistrer.
+3. **Ajouter un second enregistrement** (vérification de domaine, obligatoire
+   — sans lui Railway répond 404 même si le CNAME résout) :
+   - Type : `TXT`
+   - Nom d'hôte : exactement celui affiché par Railway (souvent quelque chose
+     comme `_railway` ou `beta` selon leur génération du moment)
+   - Valeur : la chaîne fournie par Railway
+   - Enregistrer.
+4. **Attention** : IONOS interdit un `CNAME` sur la racine (`@`) — c'est sans
+   incidence ici puisque `beta` est un sous-domaine.
+5. Propagation : IONOS applique en général immédiatement en interne, jusqu'à
+   ~1 h pour une propagation DNS complète. Railway indique dans son onglet
+   *Networking* quand le domaine est vérifié et le certificat TLS émis.
+6. Vérifier ensuite `https://beta.applicalbum.com/robots.txt` répond bien
+   (confirme domaine + TLS + appli tous opérationnels), puis se connecter en
+   admin et vérifier `db-status`.
 
 ---
 

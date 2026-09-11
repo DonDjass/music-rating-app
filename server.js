@@ -69,7 +69,33 @@ function isReservedProfile(profile) {
   return !!ADMIN_PASSWORD && !!profile && RESERVED_LC.has(profile.toLowerCase());
 }
 
-const db = new Database("music.db");
+// Emplacement du fichier SQLite. En local : "music.db" (racine du projet),
+// inchangé. En hébergement à volume persistant (Railway...), DB_PATH pointe
+// vers un chemin sur le volume monté (ex. /data/music.db) — sans quoi les
+// notations seraient perdues à chaque redéploiement (disque éphémère).
+const DB_PATH = process.env.DB_PATH || "music.db";
+
+// Restauration d'une base existante (déploiement initial) : /api/admin/db-restore
+// dépose le fichier reçu à côté, sous DB_PATH + ".upload", SANS jamais toucher
+// une base déjà ouverte par le process. On l'installe ici, avant l'ouverture —
+// c'est le seul moment sûr pour remplacer le fichier.
+const pendingUpload = `${DB_PATH}.upload`;
+if (fs.existsSync(pendingUpload)) {
+  if (fs.existsSync(DB_PATH)) {
+    fs.renameSync(DB_PATH, `${DB_PATH}.bak-${Date.now()}`);
+  }
+  fs.renameSync(pendingUpload, DB_PATH);
+  console.log(`music.db restauré depuis ${pendingUpload} (ancien fichier conservé en .bak-*).`);
+}
+
+// Volume monté sur un dossier qui n'existe pas encore (premier déploiement) :
+// le créer avant d'ouvrir la base, sinon better-sqlite3 échoue.
+const dbDir = path.dirname(DB_PATH);
+if (dbDir && dbDir !== "." && !fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ratings (
@@ -1518,6 +1544,7 @@ const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
 };
 
 function serveStatic(pathname, res) {
@@ -1587,6 +1614,67 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/admin/check" && req.method === "GET") {
       const ok = isAdminRequest(req);
       return sendJson(res, ok ? 200 : 401, { admin: ok });
+    }
+
+    // Outil de déploiement (Railway et autres hébergeurs à volume) : voir
+    // DB_PATH plus haut. Réservé à l'admin ; sans ADMIN_PASSWORD, toujours 403.
+    if (pathname === "/api/admin/db-status" && req.method === "GET") {
+      if (!isAdminRequest(req)) {
+        return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+      }
+      let sizeBytes = null;
+      try {
+        sizeBytes = fs.statSync(DB_PATH).size;
+      } catch {
+        /* fichier pas encore créé */
+      }
+      const ratingsCount = db.prepare(`SELECT COUNT(*) AS n FROM ratings`).get().n;
+      return sendJson(res, 200, {
+        path: DB_PATH,
+        sizeBytes,
+        ratingsCount,
+        pendingRestore: fs.existsSync(pendingUpload),
+      });
+    }
+
+    // Dépose un fichier .db reçu en corps brut (pas de JSON) à côté de DB_PATH ;
+    // il est installé au PROCHAIN démarrage (jamais pendant que la base est
+    // ouverte, cf. le code juste avant `new Database(DB_PATH)`). Refuse par
+    // défaut si la base courante contient déjà des notations (?force=1 pour
+    // passer outre) — filet de sécurité contre un remplacement accidentel
+    // d'une bêta déjà utilisée.
+    if (pathname === "/api/admin/db-restore" && req.method === "POST") {
+      if (!isAdminRequest(req)) {
+        return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+      }
+      const currentCount = db.prepare(`SELECT COUNT(*) AS n FROM ratings`).get().n;
+      if (currentCount > 0 && url.searchParams.get("force") !== "1") {
+        return sendJson(res, 409, {
+          error: `La base actuelle contient déjà ${currentCount} ligne(s). Ajoute ?force=1 à l'URL pour remplacer quand même.`,
+        });
+      }
+      const MAX_BYTES = 100 * 1024 * 1024;
+      let total = 0;
+      const chunks = [];
+      try {
+        for await (const chunk of req) {
+          total += chunk.length;
+          if (total > MAX_BYTES) throw new Error("too_large");
+          chunks.push(chunk);
+        }
+      } catch {
+        return sendJson(res, 413, { error: "Fichier trop volumineux." });
+      }
+      const buf = Buffer.concat(chunks);
+      if (buf.length < 16 || buf.toString("latin1", 0, 15) !== "SQLite format 3") {
+        return sendJson(res, 400, { error: "Fichier invalide : ce n'est pas une base SQLite." });
+      }
+      fs.writeFileSync(pendingUpload, buf);
+      return sendJson(res, 200, {
+        ok: true,
+        bytes: buf.length,
+        note: "Déposé. Redémarre le service pour l'installer (l'ancien fichier est conservé en .bak-*).",
+      });
     }
 
     const searchCatMatch = pathname.match(/^\/api\/search\/(tracks|albums|artists)$/);
