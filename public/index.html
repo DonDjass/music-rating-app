@@ -121,6 +121,18 @@
               </div>
             </div>
           </div>
+
+          <!-- Valeur héritée ajustée à la main : revenir à la moyenne morceaux.
+               Détail secondaire (nombre de morceaux utilisés) sous le bouton
+               "Calculer", masqué hors édition. -->
+          <button type="button" class="feeling-revert" id="album-feeling-revert" hidden>↺ valeur calculée</button>
+
+          <button type="button" class="inherit-btn" id="album-feeling-inherit-btn" hidden>
+            Calculer depuis mes morceaux
+          </button>
+          <p class="inherit-btn-hint" id="album-feeling-inherit-hint" hidden></p>
+          <p class="feeling-origin-hint" id="album-feeling-origin" hidden></p>
+
           <div class="edit-actions" id="album-feeling-actions" hidden>
             <div class="btn-row">
               <button type="button" class="btn btn-grey" data-action="reset">Réinitialiser</button>

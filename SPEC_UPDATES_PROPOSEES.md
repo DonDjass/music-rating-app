@@ -179,6 +179,58 @@ recliquer « Calculer P/T/P depuis mes morceaux ». Implémenté ainsi.
 
 ---
 
+## A7. NOTE AU FEELING Album calculée depuis les morceaux
+
+**Contexte :** demande explicite de l'utilisateur (2026-09-11). Étend la
+NOTE AU FEELING Album (§ BUSINESS RULE — NOTE AU FEELING Album, déjà
+existante) avec un mécanisme d'héritage depuis les morceaux, symétrique à
+celui déjà validé pour Performance/Texte/Production (cf. le corps du
+document, section Critères Album). Texte complet des règles validées par
+l'utilisateur avant implémentation — à reporter dans le TRS Excel.
+
+**Statut : `VALIDATED` (nouvelles règles, à ajouter à la spec canonique)**
+
+- **Disponibilité :** calcul possible dès qu'au moins un morceau de l'album a
+  une NOTE AU FEELING. Aucun seuil de couverture (indépendant du seuil 70 %
+  de MORCEAUX).
+- **Calcul :** moyenne arithmétique des NOTE AU FEELING morceaux renseignées,
+  arrondie au dixième. Morceaux non notés exclus.
+- **Héritage et synchronisation :** une NOTE AU FEELING Album calculée est une
+  valeur héritée, resynchronisée automatiquement à chaque création/
+  modification/suppression d'une NOTE AU FEELING morceau, tant qu'elle n'est
+  pas ajustée manuellement. Une modification manuelle la rend manuelle et
+  coupe la synchronisation ; l'utilisateur peut revenir à la valeur calculée.
+- **Protection des valeurs manuelles :** si une NOTE AU FEELING Album
+  manuelle existe, une demande de calcul déclenche une confirmation avant
+  remplacement (même patron que pour Performance/Texte/Production).
+- **Indépendance :** le calcul/la synchronisation ne dépendent pas du toggle
+  « Prendre en compte mes notes des morceaux » (qui ne contrôle que la
+  composante MORCEAUX de la NOTE GLOBALE).
+- **Origine consultable :** « Calculée depuis X/Y morceaux » disponible en
+  détail secondaire.
+- **Disparition des données sources :** si plus aucun morceau n'a de NOTE AU
+  FEELING, la valeur héritée redevient vide ; la NOTE GLOBALE Album est
+  recalculée à partir des composantes restantes (vide si plus aucune).
+
+**RÉINITIALISER — aligné sur A6 (écart assumé, même demande) :** RÉINITIALISER
+vide la NOTE AU FEELING Album (manuelle ou héritée) sans la restaurer
+automatiquement, disponible dès qu'une valeur existe. Contredit la lecture
+naturelle du texte ci-dessus (qui suggérerait une restauration automatique,
+par analogie avec les critères) exactement comme A6 contredit le texte
+d'origine pour Performance/Texte/Production — cohérent avec le choix déjà
+fait, pas un nouvel écart isolé.
+
+**Implémentation (2026-09-11) :** colonne `feeling_is_manual` sur `ratings`
+(nouvelle — l'héritage des critères vit dans `rating_criteria.is_manual`,
+inapplicable au feeling qui n'est pas dans cette table) ; nouvel agrégat
+`trackFeelingMean`/`trackFeelingCount` dans `albumTrackStats` (moyenne des
+NOTE AU FEELING morceaux, **distinct** de `morceauxMean` qui moyenne les
+NOTE GLOBALE morceaux pour la composante MORCEAUX) ; `recomputeAlbum()`
+étendu pour resynchroniser le feeling hérité comme il le fait déjà pour
+Performance/Texte/Production.
+
+---
+
 # PARTIE B — Nouvelles fonctionnalités à spécifier
 
 Toutes ces capacités ont été développées à la demande de l'utilisateur et ne

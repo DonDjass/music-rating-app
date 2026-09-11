@@ -1323,6 +1323,10 @@ const albumFeelingToggle = el("album-feeling-toggle");
 const albumFeelingSlider = el("album-feeling-slider");
 const albumFeelingValueEl = el("album-feeling-value");
 const albumFeelingActions = el("album-feeling-actions");
+const albumFeelingRevert = el("album-feeling-revert");
+const albumFeelingInheritBtn = el("album-feeling-inherit-btn");
+const albumFeelingInheritHint = el("album-feeling-inherit-hint");
+const albumFeelingOrigin = el("album-feeling-origin");
 
 const albumCriteriaBlock = el("album-criteria-block");
 const albumCriteriaToggle = el("album-criteria-toggle");
@@ -1351,7 +1355,7 @@ for (const line of albumCriteriaBreakdown.querySelectorAll(".criteria-line")) {
 
 let albumNotation = null; // dernier état serveur pour l'album courant
 let albumEditing = null; // 'feeling' | 'criteria' | null
-let albumFeelingDraft = null; // nombre ou null
+let albumFeelingDraft = { value: null, manual: true }; // { value: number|null, manual: bool }
 let albumCriteriaDraft = null; // { <nom>: { value: number|null, manual: bool } }
 let albumCardForced = false; // "Noter l'album" a déjà révélé la carte
 
@@ -1506,6 +1510,9 @@ function savedCritManual(name) {
   const c = albumNotation && albumNotation.criteria[name];
   return !!(c && c.manual);
 }
+function trackFeelingMean() {
+  return (albumNotation && albumNotation.trackFeelingMean) ?? null;
+}
 function trackMean(name) {
   return (albumNotation && albumNotation.trackCritMeans[name]) ?? null;
 }
@@ -1521,7 +1528,8 @@ function renderAlbumFeeling() {
   albumFeelingSlider.disabled = !isEditing;
 
   const saved = albumNotation ? albumNotation.feeling : null;
-  const shown = isEditing ? albumFeelingDraft : saved;
+  const savedManual = albumNotation ? albumNotation.feelingManual : true;
+  const shown = isEditing ? albumFeelingDraft.value : saved;
   albumFeelingValueEl.textContent = formatNum(shown);
   // En édition, on ne réassigne pas .value du slider en cours de drag
   // (cf. GAPS §11bis) — sa position est posée à l'ouverture / au reset.
@@ -1530,16 +1538,53 @@ function renderAlbumFeeling() {
   if (isEditing) {
     const resetBtn = albumFeelingActions.querySelector('[data-action="reset"]');
     const saveBtn = albumFeelingActions.querySelector('[data-action="save"]');
-    resetBtn.disabled = albumFeelingDraft == null;
-    saveBtn.disabled = albumFeelingDraft == null || albumFeelingDraft === saved;
+    const unchanged =
+      albumFeelingDraft.value === saved &&
+      (albumFeelingDraft.value == null || albumFeelingDraft.manual === savedManual);
+    resetBtn.disabled = albumFeelingDraft.value == null;
+    saveBtn.disabled = albumFeelingDraft.value == null || unchanged;
+  }
+
+  // "↺ valeur calculée" : valeur héritée ajustée à la main, et une moyenne
+  // morceaux existe toujours pour y revenir (même patron que les critères).
+  const tfm = trackFeelingMean();
+  const showRevert =
+    isEditing && albumFeelingDraft.manual && albumFeelingDraft.value != null && tfm != null;
+  albumFeelingRevert.hidden = !showRevert;
+
+  // "Calculer depuis mes morceaux" : dispo dès qu'au moins un morceau a une
+  // NOTE AU FEELING (aucun seuil de couverture, cf. spec). Motif de
+  // désactivation dupliqué en texte visible (title invisible au tap mobile).
+  albumFeelingInheritBtn.hidden = !isEditing;
+  albumFeelingInheritBtn.disabled = tfm == null;
+  const inheritHintText =
+    tfm == null ? "Aucun morceau de l'album n'a de note au feeling." : "";
+  albumFeelingInheritBtn.title = inheritHintText;
+  albumFeelingInheritHint.textContent = inheritHintText;
+  albumFeelingInheritHint.hidden = !isEditing || !inheritHintText;
+
+  // "Calculée depuis X/Y morceaux" — détail secondaire, uniquement quand la
+  // valeur affichée est effectivement héritée.
+  const showOrigin = isEditing && !albumFeelingDraft.manual && albumFeelingDraft.value != null;
+  albumFeelingOrigin.hidden = !showOrigin;
+  if (showOrigin) {
+    const totalTracks = albumTotalCount();
+    const count = albumNotation ? albumNotation.trackFeelingCount : 0;
+    albumFeelingOrigin.textContent =
+      totalTracks != null
+        ? `Calculée depuis ${count}/${totalTracks} morceaux.`
+        : `Calculée depuis ${count} morceau(x).`;
   }
 }
 
 function openAlbumFeelingEdit() {
   if (albumEditing === "criteria") closeAlbumCriteriaEdit();
   albumEditing = "feeling";
-  albumFeelingDraft = albumNotation ? albumNotation.feeling : null;
-  setSlider(albumFeelingSlider, albumFeelingDraft ?? 0);
+  albumFeelingDraft = {
+    value: albumNotation ? albumNotation.feeling : null,
+    manual: albumNotation ? albumNotation.feelingManual : true,
+  };
+  setSlider(albumFeelingSlider, albumFeelingDraft.value ?? 0);
   renderAlbumNotation();
 }
 
@@ -1553,8 +1598,34 @@ albumFeelingToggle.addEventListener("click", () => {
 });
 
 albumFeelingSlider.addEventListener("input", () => {
-  albumFeelingDraft = Number(albumFeelingSlider.value);
-  setSliderFill(albumFeelingSlider, albumFeelingDraft);
+  albumFeelingDraft = { value: Number(albumFeelingSlider.value), manual: true };
+  setSliderFill(albumFeelingSlider, albumFeelingDraft.value);
+  renderAlbumFeeling();
+});
+
+albumFeelingRevert.addEventListener("click", () => {
+  const m = trackFeelingMean();
+  if (m == null) return;
+  albumFeelingDraft = { value: m, manual: false };
+  setSlider(albumFeelingSlider, m);
+  renderAlbumFeeling();
+});
+
+albumFeelingInheritBtn.addEventListener("click", () => {
+  const m = trackFeelingMean();
+  if (m == null) return;
+
+  if (albumFeelingDraft.manual && albumFeelingDraft.value != null) {
+    if (
+      !confirm(
+        `Remplacer ta valeur manuelle (${formatNum(albumFeelingDraft.value)}) par la moyenne de tes morceaux (${formatNum(m)}) ?`
+      )
+    ) {
+      return;
+    }
+  }
+  albumFeelingDraft = { value: m, manual: false };
+  setSlider(albumFeelingSlider, m);
   renderAlbumFeeling();
 });
 
@@ -1562,16 +1633,20 @@ albumFeelingActions.addEventListener("click", async (e) => {
   const action = e.target.dataset.action;
   if (!action) return;
   if (action === "reset") {
-    albumFeelingDraft = null;
+    // Vide, y compris une valeur héritée — qui ne réapparaît pas toute seule
+    // (écart assumé vs. spec écrite, aligné sur le comportement des critères
+    // Album, cf. GAPS_ET_DECISIONS.md § 7bis).
+    albumFeelingDraft = { value: null, manual: false };
     setSlider(albumFeelingSlider, 0);
     renderAlbumFeeling();
   } else if (action === "cancel") {
     closeAlbumFeelingEdit();
   } else if (action === "save") {
-    if (albumFeelingDraft == null) return;
+    if (albumFeelingDraft.value == null) return;
     try {
       albumNotation = await api(`${albumApiBase()}/feeling`, "PUT", {
-        value: albumFeelingDraft,
+        value: albumFeelingDraft.value,
+        manual: albumFeelingDraft.manual,
         total: albumTotalCount(),
         meta: albumSaveMeta(),
       });

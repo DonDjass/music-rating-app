@@ -7,6 +7,34 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## NOTE AU FEELING Album calculée depuis les morceaux — 2026-09-11
+
+Extension symétrique du mécanisme déjà validé pour Performance/Texte/
+Production (voir plus bas, « Notation d'album (GD-00003) »), appliquée à la
+NOTE AU FEELING Album. Texte complet des règles + détail d'implémentation :
+`SPEC_UPDATES_PROPOSEES.md` § A7.
+
+- Colonne `feeling_is_manual` (nouvelle — le feeling n'est pas dans
+  `rating_criteria`, pas de mécanisme d'hérité/manuel réutilisable tel quel).
+- Nouvel agrégat `trackFeelingMean`/`trackFeelingCount` (moyenne des NOTE AU
+  FEELING morceaux) — **distinct** de `morceauxMean` (moyenne des NOTE
+  GLOBALE morceaux, composante MORCEAUX de la NOTE GLOBALE Album). Deux
+  moyennes différentes sur les mêmes morceaux, à ne pas confondre en lisant
+  le code plus tard.
+- `recomputeAlbum()` resynchronise désormais aussi le feeling hérité.
+- Client : bouton « Calculer depuis mes morceaux » + confirmation si valeur
+  manuelle existante (même patron que les critères) ; « ↺ valeur calculée » ;
+  « Calculée depuis X/Y morceaux » en détail secondaire.
+- RÉINITIALISER aligné sur l'écart déjà assumé pour les critères (§ 7bis
+  plus bas / SPEC_UPDATES § A6) : vide sans restaurer automatiquement.
+  Discuté et confirmé explicitement avec l'utilisateur avant implémentation
+  (pas une extrapolation de ma part).
+- Testé en local sur un vrai album de l'utilisateur (« La fierté des
+  nôtres ») : calcul initial, recalcul auto sur nouvelle note morceau,
+  protection d'une valeur manuelle, retour à la valeur calculée,
+  disparition de toutes les notes sources → NOTE GLOBALE recalculée. Base
+  restaurée à l'identique après tests.
+
 ## Nettoyage post-revue (10 correctifs) — 2026-09-11
 
 Suite à une revue de code sur les commits Deezer/profils/rôle admin/Railway

@@ -179,6 +179,12 @@ const NEW_COLUMNS_2 = {
   //    toujours sur un profil précis).
   //  - sinon : le pseudo saisi côté client (en-tête X-Profile).
   profile: "TEXT",
+  // NOTE AU FEELING Album : peut désormais être héritée des morceaux (comme
+  // Performance/Texte/Production). DEFAULT 1 (manuelle) pour que les lignes
+  // déjà en base au moment de la migration ne se mettent pas soudain à se
+  // resynchroniser toutes seules avec une moyenne que personne n'a demandée.
+  // Album seulement (sans effet sur les lignes track/artist).
+  feeling_is_manual: "INTEGER NOT NULL DEFAULT 1",
 };
 
 const existingColumns = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
@@ -606,7 +612,7 @@ function mean1(values) {
 function albumTrackStats(releaseMbid, profile) {
   const rows = db
     .prepare(
-      `SELECT crit_performance, crit_texte, crit_production, global_rating
+      `SELECT crit_performance, crit_texte, crit_production, global_rating, feeling_rating
          FROM ratings
         WHERE release_mbid = ? AND entity_type = 'track' AND profile = ?`
     )
@@ -617,11 +623,19 @@ function albumTrackStats(releaseMbid, profile) {
   for (const name of ALBUM_INHERITABLE) {
     critMeans[name] = mean1(rows.map((r) => r[TRACK_CRIT_COLUMN[name]]));
   }
+  // Moyenne des NOTE AU FEELING morceaux — sert UNIQUEMENT à l'héritage de la
+  // NOTE AU FEELING Album (ci-dessous). À NE PAS confondre avec `morceauxMean`
+  // (moyenne des NOTE GLOBALE Track, feeling+critères combinés, utilisée pour
+  // la composante MORCEAUX de la NOTE GLOBALE Album) : deux agrégats
+  // distincts sur les mêmes morceaux.
+  const feelingValues = rows.map((r) => r.feeling_rating).filter((v) => v != null);
 
   return {
     ratedCount: ratedGlobals.length,
     morceauxMean: mean1(ratedGlobals),
     critMeans,
+    trackFeelingMean: mean1(feelingValues),
+    trackFeelingCount: feelingValues.length,
   };
 }
 
@@ -692,10 +706,21 @@ function recomputeAlbum(row) {
     }
   }
 
+  // NOTE AU FEELING Album héritée : même principe que les critères
+  // ci-dessus, appliqué à un scalaire (feeling_rating/feeling_is_manual)
+  // plutôt qu'à rating_criteria. Si plus aucun morceau n'a de NOTE AU
+  // FEELING, trackFeelingMean vaut null → la NOTE AU FEELING Album héritée
+  // redevient vide (BR — Disparition des données sources).
+  let feeling = row.feeling_rating;
+  if (!row.feeling_is_manual) {
+    feeling = stats.trackFeelingMean;
+    db.prepare(`UPDATE ratings SET feeling_rating = ? WHERE id = ?`).run(feeling, row.id);
+  }
+
   const criteriaMap = getAlbumCriteria(row.id);
   const criteriaRating = albumCriteriaRating(criteriaMap);
   const global = computeAlbumGlobal({
-    feeling: row.feeling_rating,
+    feeling,
     criteriaRating,
     morceauxMean: stats.morceauxMean,
     coverage,
@@ -708,7 +733,7 @@ function recomputeAlbum(row) {
     row.id
   );
 
-  return { stats, coverage, criteriaMap, criteriaRating, global };
+  return { stats, coverage, criteriaMap, criteriaRating, global, feeling };
 }
 
 // Point d'entrée du recalcul automatique déclenché par une modif de morceau
@@ -752,6 +777,7 @@ function serializeAlbumNotation(releaseMbid, totalCount, profile) {
   const setCritCount = Object.keys(criteria).length;
   const criteriaRating = albumCriteriaRating(criteriaMap);
   const feeling = row ? row.feeling_rating : null;
+  const feelingManual = row ? !!row.feeling_is_manual : true;
 
   const global = computeAlbumGlobal({
     feeling,
@@ -764,6 +790,12 @@ function serializeAlbumNotation(releaseMbid, totalCount, profile) {
   return {
     feeling,
     feelingComplete: feeling != null,
+    // Hérité (non manuel) ET une moyenne morceaux existe encore : point de
+    // départ pour "Calculer depuis mes morceaux" côté client (bouton, revert,
+    // détail "Calculée depuis X/Y morceaux").
+    feelingManual,
+    trackFeelingMean: stats.trackFeelingMean,
+    trackFeelingCount: stats.trackFeelingCount,
     criteria,
     criteriaRating,
     criteriaCompleteness: completeness(setCritCount, ALBUM_CRITERIA.length),
@@ -1441,10 +1473,17 @@ function applyAlbumTotal(row, total) {
 function handleSaveAlbumFeeling(releaseMbid, body, profile, res) {
   const value = toNumberOrNull(body.value);
   if (value == null) return sendJson(res, 400, { error: "Valeur invalide." });
+  // Manuelle par défaut (saisie directe au slider) ; `manual: false` = valeur
+  // posée via "Calculer depuis mes morceaux" côté client, reste synchronisée.
+  const manual = body.manual !== false;
 
   const row = getOrCreateAlbumRow(releaseMbid, profile, body.meta || {});
   applyAlbumTotal(row, toNumberOrNull(body.total));
-  db.prepare(`UPDATE ratings SET feeling_rating = ? WHERE id = ?`).run(value, row.id);
+  db.prepare(`UPDATE ratings SET feeling_rating = ?, feeling_is_manual = ? WHERE id = ?`).run(
+    value,
+    manual ? 1 : 0,
+    row.id
+  );
   recomputeAlbum(getAlbumRow(releaseMbid, profile));
 
   sendJson(res, 200, serializeAlbumNotation(releaseMbid, toNumberOrNull(body.total), profile));

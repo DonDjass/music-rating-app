@@ -1161,6 +1161,31 @@ input[type="range"]::-moz-range-track {
   filter: brightness(1.15);
 }
 
+/* Équivalent de .crit-revert pour la NOTE AU FEELING Album (hors grille des
+   critères, donc pas de positionnement en grid-column ici). */
+.feeling-revert {
+  display: block;
+  margin: -6px 0 4px;
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.feeling-revert:hover {
+  filter: brightness(1.15);
+}
+
+/* « Calculée depuis X/Y morceaux » — détail secondaire, non permanent. */
+.feeling-origin-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--grey);
+}
+
 .criteria-label {
   color: var(--gold);
   font-size: 12px;
