@@ -7,6 +7,26 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Mosaïque d'accueil "Tout" : plafond abaissé à 2 morceaux + pochette sur "+N autres" — demande explicite 2026-09-15
+
+Constat : en vue "Tout", la tuile Album agrégée affiche la même pochette que
+les tuiles-morceaux du même album — avec le plafond de 3 morceaux/album, un
+album très noté produisait jusqu'à 4 tuiles avec une pochette identique (3
+morceaux + Album).
+
+- **Plafond spécifique à la vue "Tout"** : `HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE
+  = 2` (au lieu de 3). La tuile Album compte pour la 3ᵉ place du groupe :
+  résultat = 2 morceaux max + Album + "+N autres" si besoin, soit 3 pochettes
+  identiques au pire (au lieu de 4). Vue "Morceaux" inchangée (pas de tuile
+  Album à côté, plafond resté à 3) — `capTracksPerAlbum` prend désormais le
+  plafond en paramètre plutôt qu'une constante fixe.
+- **Pochette sur la tuile "+N autres"** (jusqu'ici volontairement vide) :
+  ajoutée en fond, assombrie via un calque `::before` (au lieu d'une pochette
+  nette) — évite de reproduire une 3ᵉ/4ᵉ fois l'image identique à l'écran
+  tout en donnant un effet "pile" plus riche que le fond doré plat. Même
+  pipeline de chargement que les autres tuiles (`tileCoverObserver` /
+  `/api/cover`, clé release_mbid + artiste + album).
+
 ## Mosaïque d'accueil : pagination + plafond par album — demande explicite 2026-09-12
 
 Deux améliorations, purement client (aucun changement serveur/`/api/home`) :

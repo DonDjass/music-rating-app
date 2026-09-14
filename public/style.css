@@ -1499,9 +1499,11 @@ input[type="range"]::-moz-range-track {
   color: var(--gold);
 }
 
-/* Tuile "+N autres" (vue "Morceaux" seulement, au-delà de 3 morceaux notés
-   d'un même album) — délibérément sans pochette, pour ne pas se confondre
-   avec une vraie tuile de morceau. */
+/* Tuile "+N autres" (au-delà du plafond de morceaux notés d'un même album) :
+   pochette de l'album en fond (même pipeline que les autres tuiles, cf.
+   loadTileCover), assombrie via ::before pour rester lisible et clairement
+   distincte d'une vraie tuile morceau/album — effet "pile" plutôt qu'un
+   doublon net de la pochette déjà affichée ailleurs. */
 .home-tile.home-tile-more {
   display: flex;
   flex-direction: column;
@@ -1511,10 +1513,24 @@ input[type="range"]::-moz-range-track {
   background: rgba(244, 196, 48, 0.12);
 }
 
+.home-tile.home-tile-more::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 8, 4, 0.72);
+}
+
+.home-tile-more-count,
+.home-tile-more-label {
+  position: relative;
+  z-index: 1;
+}
+
 .home-tile-more-count {
   font-size: 20px;
   font-weight: 800;
   color: var(--gold);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 
 .home-tile-more-label {

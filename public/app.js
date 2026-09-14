@@ -874,15 +874,19 @@ let homeScope = "all";
 const HOME_PAGE_SIZE = 15;
 let homeShownCount = HOME_PAGE_SIZE;
 
-// Vues "Morceaux" et "Tout" (les deux mélangent des morceaux individuels) :
-// au-delà de HOME_TRACKS_PER_ALBUM morceaux notés d'un même album (par le
-// même profil — pas de mélange entre profils), les suivants sont remplacés
-// par une tuile de synthèse "+N autres" plutôt que de noyer la mosaïque avec
-// un seul album. Sans effet sur Albums/Artistes, qui n'ont pas ce problème
-// de répétition (une seule tuile par album/artiste de toute façon).
+// Vue "Morceaux" (pas de tuile Album à côté) : jusqu'à HOME_TRACKS_PER_ALBUM
+// morceaux notés d'un même album (même profil — pas de mélange entre
+// profils) affichés, les suivants remplacés par une tuile de synthèse
+// "+N autres" plutôt que de noyer la mosaïque avec un seul album.
 const HOME_TRACKS_PER_ALBUM = 3;
+// Vue "Tout" : la tuile Album agrégée est déjà affichée à côté (même
+// pochette) — sans ce plafond plus bas, un album très noté produisait
+// jusqu'à 4 tuiles avec la même pochette (3 morceaux + Album). La tuile
+// Album compte donc pour 1 des 3 places : 2 morceaux max + Album + "+N
+// autres" si besoin (BR — demande explicite 2026-09-15).
+const HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE = 2;
 
-function capTracksPerAlbum(tracks) {
+function capTracksPerAlbum(tracks, maxPerAlbum) {
   const groups = new Map();
   for (const t of tracks) {
     const key = `${(t.album || "").toLowerCase()}|${(t.artist || "").toLowerCase()}|${t.profile || ""}`;
@@ -894,12 +898,12 @@ function capTracksPerAlbum(tracks) {
     // Tri défensif : garantit l'ordre récent -> ancien même si l'ordre
     // d'entrée changeait un jour côté serveur.
     const sorted = [...group].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    if (sorted.length <= HOME_TRACKS_PER_ALBUM) {
+    if (sorted.length <= maxPerAlbum) {
       result.push(...sorted);
       continue;
     }
-    const kept = sorted.slice(0, HOME_TRACKS_PER_ALBUM);
-    const rest = sorted.slice(HOME_TRACKS_PER_ALBUM);
+    const kept = sorted.slice(0, maxPerAlbum);
+    const rest = sorted.slice(maxPerAlbum);
     result.push(...kept);
     result.push({
       type: "more",
@@ -979,12 +983,17 @@ async function loadTileCover(tile) {
   }
 }
 
-// Tuile de synthèse "+N autres" (cf. capTracksPerAlbum) : pas de pochette,
-// ouvre directement la tracklist de l'album concerné.
+// Tuile de synthèse "+N autres" (cf. capTracksPerAlbum) : pochette de
+// l'album en fond, assombrie (cf. CSS .home-tile-more::before) pour rester
+// clairement distincte d'une vraie tuile morceau/album — ouvre directement
+// la tracklist de l'album concerné.
 function createHomeMoreTile(item) {
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "home-tile home-tile-more";
+  tile.dataset.artist = item.artist || "";
+  tile.dataset.album = item.album || "";
+  tile.dataset.releaseMbid = item.releaseMbid || "";
 
   const count = document.createElement("span");
   count.className = "home-tile-more-count";
@@ -997,6 +1006,7 @@ function createHomeMoreTile(item) {
   tile.appendChild(label);
 
   tile.addEventListener("click", () => openAlbumByName(item.album, item.artist));
+  tileCoverObserver.observe(tile);
   return tile;
 }
 
@@ -1064,14 +1074,16 @@ async function openHomeTile(item) {
 
 function homeVisibleItems() {
   if (homeFilter === "all") {
-    // Le plafond par album s'applique aussi ici : sans lui, un album très
-    // noté noyait "Tout" exactement comme il noyait "Morceaux".
-    return [...capTracksPerAlbum(homeData.tracks), ...homeData.albums, ...homeData.artists].sort(
-      (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
-    );
+    // Le plafond par album s'applique aussi ici, mais plus bas qu'en vue
+    // "Morceaux" : la tuile Album (même pochette) est déjà présente.
+    return [
+      ...capTracksPerAlbum(homeData.tracks, HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE),
+      ...homeData.albums,
+      ...homeData.artists,
+    ].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   }
   if (homeFilter === "tracks") {
-    return capTracksPerAlbum(homeData.tracks).sort((a, b) =>
+    return capTracksPerAlbum(homeData.tracks, HOME_TRACKS_PER_ALBUM).sort((a, b) =>
       (b.createdAt || "").localeCompare(a.createdAt || "")
     );
   }
