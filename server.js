@@ -1290,17 +1290,26 @@ function handleMyRatings(profile, res) {
 // Accueil : mosaïque des éléments notés. Morceaux = chaque ligne avec une
 // NOTE GLOBALE ; albums / artistes = regroupés par nom (moyenne des morceaux
 // notés), triés du plus récemment noté au plus ancien.
-function handleHome(profile, res) {
+// `scope` : "mine" (défaut serveur si absent) = profil courant uniquement ;
+// "all" = tous les profils confondus, SANS fusion entre profils (BR — bêta
+// entre amis de confiance, cf. GAPS_ET_DECISIONS.md § Mosaïque "Tout le
+// monde") : la clause GROUP BY inclut alors `profile`, donc un même
+// album/artiste noté par deux personnes produit deux lignes distinctes.
+function handleHome(profile, scope, res) {
+  const mine = scope !== "all";
+  const p = mine ? [profile] : [];
+
   const tracks = db
     .prepare(
       `SELECT mbid, track_title, album, artist, global_rating AS note,
-              is_classic, release_mbid, created_at
+              is_classic, release_mbid, created_at, profile
          FROM ratings
         WHERE mbid IS NOT NULL AND global_rating IS NOT NULL
-          AND entity_type = 'track' AND profile = ?
+          AND entity_type = 'track' AND profile IS NOT NULL
+          ${mine ? "AND profile = ?" : ""}
         ORDER BY created_at DESC`
     )
-    .all(profile)
+    .all(...p)
     .map((r) => ({
       type: "track",
       mbid: r.mbid,
@@ -1311,20 +1320,22 @@ function handleHome(profile, res) {
       note: r.note,
       isClassic: !!r.is_classic,
       createdAt: r.created_at,
+      profile: r.profile,
     }));
 
   const albums = db
     .prepare(
-      `SELECT album, artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
+      `SELECT album, artist, profile, AVG(global_rating) AS note, MAX(created_at) AS created_at
          FROM ratings
         WHERE global_rating IS NOT NULL
-          AND entity_type = 'track' AND profile = ?
+          AND entity_type = 'track' AND profile IS NOT NULL
           AND album IS NOT NULL AND album NOT IN ('', 'Album inconnu')
           AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
-        GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE
+          ${mine ? "AND profile = ?" : ""}
+        GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE${mine ? "" : ", profile"}
         ORDER BY created_at DESC`
     )
-    .all(profile)
+    .all(...p)
     .map((r) => ({
       type: "album",
       title: r.album,
@@ -1332,19 +1343,21 @@ function handleHome(profile, res) {
       note: round1(r.note),
       isClassic: false,
       createdAt: r.created_at,
+      profile: r.profile,
     }));
 
   const artists = db
     .prepare(
-      `SELECT artist, AVG(global_rating) AS note, MAX(created_at) AS created_at
+      `SELECT artist, profile, AVG(global_rating) AS note, MAX(created_at) AS created_at
          FROM ratings
         WHERE global_rating IS NOT NULL
-          AND entity_type = 'track' AND profile = ?
+          AND entity_type = 'track' AND profile IS NOT NULL
           AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
-        GROUP BY artist COLLATE NOCASE
+          ${mine ? "AND profile = ?" : ""}
+        GROUP BY artist COLLATE NOCASE${mine ? "" : ", profile"}
         ORDER BY created_at DESC`
     )
-    .all(profile)
+    .all(...p)
     .map((r) => ({
       type: "artist",
       title: r.artist,
@@ -1352,6 +1365,7 @@ function handleHome(profile, res) {
       note: round1(r.note),
       isClassic: false,
       createdAt: r.created_at,
+      profile: r.profile,
     }));
 
   sendJson(res, 200, { tracks, albums, artists });
@@ -1868,7 +1882,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/api/home" && req.method === "GET") {
-      return handleHome(profile, res);
+      return handleHome(profile, url.searchParams.get("scope"), res);
     }
 
     if (pathname === "/api/search-history" && req.method === "GET") {

@@ -7,6 +7,79 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Mosaïque d'accueil : pagination + plafond par album — demande explicite 2026-09-12
+
+Deux améliorations, purement client (aucun changement serveur/`/api/home`) :
+
+- **« Voir plus » :** 15 tuiles à l'ouverture (respecte le filtre actif —
+  type ET « qui »), un clic en ajoute 15 de plus par **append** (les tuiles
+  déjà affichées, pochettes comprises, ne sont jamais reconstruites). Un
+  changement de filtre remet à zéro et réaffiche les 15 premières de la
+  nouvelle liste. Bouton masqué s'il n'y a plus rien à charger.
+- **Plafond de 3 morceaux par album dans les vues « Morceaux » ET « Tout »**
+  (aucun impact sur Albums/Artistes, qui n'ont qu'une tuile par élément de
+  toute façon) : au-delà de 3 morceaux notés d'un même album **par le même
+  profil**, les suivants sont remplacés par une tuile de synthèse « +N
+  autres » (sans pochette, fond doré translucide) placée à la date du
+  premier morceau exclu — elle apparaît donc dans le fil trié par date
+  exactement là où ce morceau serait apparu. Clic → ouvre la tracklist
+  complète de l'album (`openAlbumByName`, comme une tuile Album classique).
+  Regroupement par `(album, artiste, profil)` — cohérent avec le choix déjà
+  fait pour la mosaïque « Tout le monde » de ne jamais mélanger deux
+  profils dans une même tuile/un même compte.
+  **Écart vs. la demande initiale du 2026-09-12** (« impact sur la vue
+  Morceaux uniquement ») : après premier essai, retour utilisateur que la
+  vue « Tout » restait tout autant noyée par un album très noté — le
+  plafond y a donc été étendu, appliqué uniquement à la portion morceaux du
+  mélange (les tuiles Albums/Artistes de « Tout » restent inchangées,
+  jamais plafonnées puisqu'à raison d'une tuile par élément).
+- Testé avec le vrai jeu de données de l'utilisateur : 181 morceaux notés
+  (profil Don) → 58 tuiles en vue « Morceaux » après plafonnement ; en vue
+  « Tout » (207 éléments avant), 84 après. « All Eyez on Me » (24 morceaux
+  notés) → 3 tuiles + « +21 autres » à la bonne position chronologique,
+  dans les deux vues. Pagination vérifiée sur ce même volume (> 15,
+  plusieurs pages) et sur un filtre à moins de 15 éléments (bouton absent).
+
+## Mosaïque d'accueil "Tout le monde" — demande explicite 2026-09-11
+
+Filtre supplémentaire sur l'accueil : « Tout le monde » (défaut à
+l'ouverture) montre les notations de **tous les profils confondus** ; « Mes
+notations » revient au comportement d'origine (profil courant uniquement).
+
+- **Pas de fusion entre profils :** un même morceau/album/artiste noté par
+  plusieurs profils affiche une tuile **par profil** (la clause SQL `GROUP BY`
+  inclut `profile` en mode « Tout le monde », contre `album, artiste`
+  seulement en mode « Mes notations »).
+- **Pseudo affiché** dans le coin haut-droite de chaque tuile (emplacement
+  jusqu'ici réservé, cf. commentaire CSS d'origine) — uniquement en mode
+  « Tout le monde » (inutile quand tout t'appartient déjà).
+- **Tri inchangé** : plus récemment noté → plus ancien, toutes personnes
+  confondues (le tri était déjà indépendant du profil).
+- **Libellé « Tout le monde » plutôt que « Tout »** (proposé initialement) :
+  le filtre de type juste en dessous utilise déjà « Tout » (tous types
+  confondus) — les deux lignes de filtres auraient porté le même mot pour
+  deux sens différents.
+- **Ouvrir une tuile d'un autre profil** ouvre la fiche du morceau/album/
+  artiste sous **ton** profil courant (pas celui qui l'a notée) — comme pour
+  toute navigation dans l'appli, une fiche affiche toujours la notation du
+  profil connecté. Voulu : ça t'invite à noter à ton tour, pas une usurpation
+  de vue.
+
+### ⚠️ Confidentialité — non traitée, choix temporaire assumé
+
+**Toutes les notations de tous les profils sont visibles par n'importe quel
+profil, sans distinction public/privé.** Il n'existe aucun contrôle de
+confidentialité par notation — quiconque utilise l'appli (même un pseudo créé
+à l'instant) peut voir, via « Tout le monde », l'intégralité des notations de
+tous les autres, y compris celles de l'administrateur. Accepté pour cette
+bêta entre amis de confiance ; une vraie option public/privé par notation est
+prévue pour une version ultérieure (hors périmètre ici).
+
+Testé en local avec deux profils ayant noté le même album/morceau/artiste :
+tuiles séparées confirmées en mode « Tout le monde », isolation intacte en
+mode « Mes notations », tri par date correct. Base restaurée à l'identique
+après tests.
+
 ## Code à 4 chiffres par pseudo normal — demande explicite 2026-09-11
 
 But : empêcher qu'un pseudo déjà pris par quelqu'un soit réclamé par

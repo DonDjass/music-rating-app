@@ -853,14 +853,67 @@ tabMyRatings.addEventListener("click", () => {
 // --- Accueil : mosaïque des dernières notations ---
 
 const homeSearchBar = el("home-search-bar");
+const homeScopeFilters = el("home-scope-filters");
 const homeFilters = el("home-filters");
 const homeStatus = el("home-status");
 const homeGrid = el("home-grid");
+const homeShowMoreBtn = el("home-show-more");
 const homeEmpty = el("home-empty");
 const homeEmptyCta = el("home-empty-cta");
 
 let homeData = { tracks: [], albums: [], artists: [] };
 let homeFilter = "all";
+// "all" = tout le monde (défaut), "mine" = uniquement mes notations. Change
+// ce qu'on demande au serveur (contrairement à homeFilter, qui ne fait que
+// re-filtrer les données déjà reçues) — un changement recharge donc /api/home.
+let homeScope = "all";
+
+// Chargement progressif : combien de tuiles de la liste filtrée courante sont
+// affichées. Remis à HOME_PAGE_SIZE à chaque changement de filtre (la liste
+// sous-jacente change) ; incrémenté par "Voir plus" (append, pas de reload).
+const HOME_PAGE_SIZE = 15;
+let homeShownCount = HOME_PAGE_SIZE;
+
+// Vues "Morceaux" et "Tout" (les deux mélangent des morceaux individuels) :
+// au-delà de HOME_TRACKS_PER_ALBUM morceaux notés d'un même album (par le
+// même profil — pas de mélange entre profils), les suivants sont remplacés
+// par une tuile de synthèse "+N autres" plutôt que de noyer la mosaïque avec
+// un seul album. Sans effet sur Albums/Artistes, qui n'ont pas ce problème
+// de répétition (une seule tuile par album/artiste de toute façon).
+const HOME_TRACKS_PER_ALBUM = 3;
+
+function capTracksPerAlbum(tracks) {
+  const groups = new Map();
+  for (const t of tracks) {
+    const key = `${(t.album || "").toLowerCase()}|${(t.artist || "").toLowerCase()}|${t.profile || ""}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  const result = [];
+  for (const group of groups.values()) {
+    // Tri défensif : garantit l'ordre récent -> ancien même si l'ordre
+    // d'entrée changeait un jour côté serveur.
+    const sorted = [...group].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    if (sorted.length <= HOME_TRACKS_PER_ALBUM) {
+      result.push(...sorted);
+      continue;
+    }
+    const kept = sorted.slice(0, HOME_TRACKS_PER_ALBUM);
+    const rest = sorted.slice(HOME_TRACKS_PER_ALBUM);
+    result.push(...kept);
+    result.push({
+      type: "more",
+      album: kept[0].album,
+      artist: kept[0].artist,
+      releaseMbid: kept[0].releaseMbid,
+      count: rest.length,
+      // Placée à la date du premier morceau exclu : apparaît dans le fil,
+      // triée par date, exactement là où ce morceau serait apparu.
+      createdAt: rest[0].createdAt,
+    });
+  }
+  return result;
+}
 
 const goToSearch = () => {
   showSearchView();
@@ -877,6 +930,16 @@ homeFilters.addEventListener("click", (e) => {
     b.classList.toggle("active", b === btn);
   }
   renderHome();
+});
+
+homeScopeFilters.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-scope-filter");
+  if (!btn || btn.dataset.scope === homeScope) return;
+  homeScope = btn.dataset.scope;
+  for (const b of homeScopeFilters.querySelectorAll(".home-scope-filter")) {
+    b.classList.toggle("active", b === btn);
+  }
+  loadHome();
 });
 
 // Pochettes des tuiles : chargées seulement à l'approche de l'écran.
@@ -916,7 +979,30 @@ async function loadTileCover(tile) {
   }
 }
 
+// Tuile de synthèse "+N autres" (cf. capTracksPerAlbum) : pas de pochette,
+// ouvre directement la tracklist de l'album concerné.
+function createHomeMoreTile(item) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "home-tile home-tile-more";
+
+  const count = document.createElement("span");
+  count.className = "home-tile-more-count";
+  count.textContent = `+${item.count}`;
+  tile.appendChild(count);
+
+  const label = document.createElement("span");
+  label.className = "home-tile-more-label";
+  label.textContent = item.count > 1 ? "autres" : "autre";
+  tile.appendChild(label);
+
+  tile.addEventListener("click", () => openAlbumByName(item.album, item.artist));
+  return tile;
+}
+
 function createHomeTile(item) {
+  if (item.type === "more") return createHomeMoreTile(item);
+
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "home-tile";
@@ -941,6 +1027,15 @@ function createHomeTile(item) {
   note.className = "home-tile-note";
   note.textContent = formatNum(item.note);
   tile.appendChild(note);
+
+  // Pseudo de l'auteur : uniquement utile en mode "Tout le monde" (en mode
+  // "Mes notations", tout appartient à l'utilisateur courant — inutile).
+  if (homeScope === "all" && item.profile) {
+    const author = document.createElement("span");
+    author.className = "home-tile-profile";
+    author.textContent = item.profile;
+    tile.appendChild(author);
+  }
 
   tile.addEventListener("click", () => openHomeTile(item));
   tileCoverObserver.observe(tile);
@@ -969,23 +1064,48 @@ async function openHomeTile(item) {
 
 function homeVisibleItems() {
   if (homeFilter === "all") {
-    return [...homeData.tracks, ...homeData.albums, ...homeData.artists].sort((a, b) =>
+    // Le plafond par album s'applique aussi ici : sans lui, un album très
+    // noté noyait "Tout" exactement comme il noyait "Morceaux".
+    return [...capTracksPerAlbum(homeData.tracks), ...homeData.albums, ...homeData.artists].sort(
+      (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")
+    );
+  }
+  if (homeFilter === "tracks") {
+    return capTracksPerAlbum(homeData.tracks).sort((a, b) =>
       (b.createdAt || "").localeCompare(a.createdAt || "")
     );
   }
   return homeData[homeFilter] || [];
 }
 
+function appendHomeTiles(items, from, to) {
+  for (let i = from; i < to && i < items.length; i++) {
+    homeGrid.appendChild(createHomeTile(items[i]));
+  }
+}
+
 function renderHome() {
   const total = homeData.tracks.length + homeData.albums.length + homeData.artists.length;
   const empty = total === 0;
 
+  // Le filtre "qui" reste visible même vide : si "Mes notations" ne montre
+  // rien, c'est lui qui permet de découvrir qu'il y a du contenu côté
+  // "Tout le monde" (l'inverse n'est jamais vrai, "mine" est un sous-ensemble
+  // de "all").
   homeFilters.hidden = empty;
   homeGrid.hidden = empty;
   homeEmpty.hidden = !empty;
+  if (empty) {
+    el("home-empty-text").textContent =
+      homeScope === "mine" ? "Tu n'as encore rien noté." : "Personne n'a encore rien noté.";
+  }
   tileCoverObserver.disconnect();
   homeGrid.innerHTML = "";
-  if (empty) return;
+  homeShownCount = HOME_PAGE_SIZE; // nouveau filtre = on repart de la 1ère page
+  if (empty) {
+    homeShowMoreBtn.hidden = true;
+    return;
+  }
 
   const items = homeVisibleItems();
   if (items.length === 0) {
@@ -993,16 +1113,26 @@ function renderHome() {
     msg.className = "home-grid-msg";
     msg.textContent = "Rien dans cette catégorie pour l'instant.";
     homeGrid.appendChild(msg);
+    homeShowMoreBtn.hidden = true;
     return;
   }
-  for (const item of items) homeGrid.appendChild(createHomeTile(item));
+  appendHomeTiles(items, 0, homeShownCount);
+  homeShowMoreBtn.hidden = homeShownCount >= items.length;
 }
+
+homeShowMoreBtn.addEventListener("click", () => {
+  const items = homeVisibleItems();
+  const from = homeShownCount;
+  homeShownCount = Math.min(homeShownCount + HOME_PAGE_SIZE, items.length);
+  appendHomeTiles(items, from, homeShownCount);
+  homeShowMoreBtn.hidden = homeShownCount >= items.length;
+});
 
 async function loadHome() {
   homeStatus.hidden = false;
   homeStatus.textContent = "Chargement…";
   try {
-    homeData = await api("/api/home", "GET");
+    homeData = await api(`/api/home?scope=${homeScope}`, "GET");
   } catch (err) {
     homeData = { tracks: [], albums: [], artists: [] };
   }

@@ -280,6 +280,14 @@
         <span>Chercher un morceau, un album, un artiste…</span>
       </button>
 
+      <!-- "Tout" est déjà pris par le filtre de type juste en dessous (Tout /
+           Morceaux / Albums / Artistes) — "Tout le monde" évite l'ambiguïté
+           entre les deux lignes de filtres. -->
+      <div class="home-scope-filters" id="home-scope-filters">
+        <button class="home-scope-filter active" data-scope="all" type="button">Tout le monde</button>
+        <button class="home-scope-filter" data-scope="mine" type="button">Mes notations</button>
+      </div>
+
       <div class="home-filters" id="home-filters">
         <button class="home-filter active" data-filter="all" type="button">Tout</button>
         <button class="home-filter" data-filter="tracks" type="button">Morceaux</button>
@@ -289,9 +297,12 @@
 
       <p id="home-status" class="search-status" hidden></p>
       <div class="home-grid" id="home-grid"></div>
+      <!-- .inherit-btn : bouton plein-largeur, contour doré, déjà utilisé
+           pour "Calculer depuis mes morceaux" — réutilisé tel quel ici. -->
+      <button class="inherit-btn home-show-more" id="home-show-more" type="button" hidden>Voir plus</button>
 
       <div class="home-empty" id="home-empty" hidden>
-        <p>Tu n'as encore rien noté.</p>
+        <p id="home-empty-text">Tu n'as encore rien noté.</p>
         <button class="home-empty-cta" id="home-empty-cta" type="button">Chercher un premier morceau</button>
       </div>
     </section>
