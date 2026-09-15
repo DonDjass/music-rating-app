@@ -718,6 +718,13 @@ body {
   text-decoration-color: currentColor;
 }
 
+/* Raccourci "Retour" toujours sticky (cf. #album-rating-sticky-back) :
+   même style que .drilldown-back, juste un peu de marge en plus vu sa
+   position dans la barre sticky. */
+.album-rating-sticky-back {
+  padding: 0 0 6px;
+}
+
 .track-meta .tags {
   margin: 4px 0 0;
   color: var(--grey);
@@ -823,6 +830,111 @@ body {
 
 .like-btn.liked {
   color: var(--heart-pink);
+}
+
+/* Bouton "Partager" (GD-partage) : même gabarit rond que .like-btn, sans état
+   toggle — ouvre la feuille .share-sheet définie plus bas. */
+.share-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  color: var(--white);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Feuille de partage : overlay plein écran + panneau ancré en bas (pattern
+   mobile-first, cohérent avec le reste de l'appli). */
+.share-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+}
+
+.share-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.share-sheet-panel {
+  position: relative;
+  width: 100%;
+  background: #171412;
+  border-top: 1px solid var(--card-border);
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-sheet-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-sheet-option {
+  background: var(--gold);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.share-sheet-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.share-sheet-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-sheet-link-input {
+  flex: 1;
+  min-width: 0;
+  background: #0f0d0b;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  color: var(--white);
+  font-size: 13px;
+  padding: 0 12px;
+}
+
+.share-sheet-link-row .share-sheet-option {
+  flex-shrink: 0;
+  padding: 10px 16px;
+}
+
+.share-sheet-cancel {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--grey);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-top: 4px;
 }
 
 /* --- Notation card --- */

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Music App — Fiche morceau</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div class="phone">
@@ -67,11 +67,23 @@
           <div class="header-actions">
             <button class="play-btn" id="album-play-btn" type="button">▶ Écouter</button>
             <button class="like-btn" id="album-like-btn" type="button" aria-label="J'aime">♡</button>
+            <button class="share-btn" id="album-share-btn" type="button" aria-label="Partager">
+              <svg class="share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12" />
+                <path d="M8 7l4-4 4 4" />
+                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+              </svg>
+            </button>
           </div>
         </div>
       </header>
 
       <div class="sticky-head" id="album-sticky" hidden>
+        <!-- Toujours sticky (contrairement au bouton "Retour" en haut de
+             .album-rating-card, qui défile hors champ dès qu'on scrolle
+             dans les critères) : seul moyen fiable de sortir du mode
+             notation quel que soit le point de scroll. -->
+        <button class="drilldown-back album-rating-sticky-back" id="album-rating-sticky-back" type="button" hidden>← Retour à l'album</button>
         <div class="sticky-head-title" id="album-sticky-title" hidden></div>
 
         <div class="album-notation" id="album-notation">
@@ -476,10 +488,17 @@
         <button class="play-btn" id="track-play-btn" type="button">▶ Écouter</button>
         <button class="preview-btn" id="track-preview-btn" type="button" aria-label="Écouter l'extrait de 30 secondes">▶ Extrait</button>
         <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
+        <button class="share-btn" id="track-share-btn" type="button" aria-label="Partager">
+          <svg class="share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v12" />
+            <path d="M8 7l4-4 4 4" />
+            <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+          </svg>
+        </button>
       </div>
       <audio id="track-preview-audio" preload="none"></audio>
 
-      <section class="notation-card">
+      <section class="notation-card" id="track-notation-card">
       <div class="notation-title-row">
         <h2>MA NOTATION <span class="global-inline">- <span id="global-value">—</span>/10</span></h2>
         <button id="classic-btn" class="classic-toggle" type="button">
@@ -562,6 +581,29 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <!-- Feuille de partage (GD-partage) : commune aux fiches album/morceau,
+       deux modes ("fiche" = lien simple, "noter" = lien + ?action=rate qui
+       scrolle vers la zone de notation à l'arrivée). -->
+  <div id="share-sheet" class="share-sheet" hidden>
+    <div id="share-sheet-backdrop" class="share-sheet-backdrop"></div>
+    <div class="share-sheet-panel">
+      <div class="share-sheet-choices" id="share-sheet-choices">
+        <button class="share-sheet-option" id="share-option-view" type="button">Partager la fiche</button>
+        <button class="share-sheet-option" id="share-option-mine" type="button">Partager ma note</button>
+        <button class="share-sheet-option" id="share-option-rate" type="button">Inviter à noter</button>
+      </div>
+      <!-- Repli quand navigator.share/clipboard sont indisponibles (contexte
+           non sécurisé : HTTP hors localhost, ex. test sur IP LAN) : lien
+           affiché en clair, présélectionné, copiable à la main même sans
+           API navigateur (cf. copyText en JS, execCommand en dernier recours). -->
+      <div class="share-sheet-link-row" id="share-sheet-link-row" hidden>
+        <input type="text" id="share-sheet-link-input" class="share-sheet-link-input" readonly />
+        <button class="share-sheet-option" id="share-sheet-copy-btn" type="button">Copier</button>
+      </div>
+      <button class="share-sheet-cancel" id="share-sheet-cancel" type="button">Annuler</button>
+    </div>
+  </div>
 
   <!-- Porte d'entrée : au premier accès (aucun pseudo sur cet appareil), on
        demande un pseudo + un code à 4 chiffres (fixé au premier usage de ce
@@ -660,6 +702,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

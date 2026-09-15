@@ -82,6 +82,7 @@ const albumTitleEl = el("album-title");
 const albumArtistEl = el("album-artist");
 const albumYearEl = el("album-year");
 const albumLikeBtn = el("album-like-btn");
+const albumShareBtn = el("album-share-btn");
 const albumActions = el("album-actions");
 const rateAlbumBtn = el("rate-album-btn");
 const rateTracksBtn = el("rate-tracks-btn");
@@ -112,6 +113,7 @@ const backFromArtistBtn = el("back-from-artist");
 
 const albumSticky = el("album-sticky");
 const albumStickyTitle = el("album-sticky-title");
+const albumRatingStickyBack = el("album-rating-sticky-back");
 const artistHeader = el("artist-header");
 const artistSticky = el("artist-sticky");
 const artistStickyTitle = el("artist-sticky-title");
@@ -139,6 +141,19 @@ const classicBtn = el("classic-btn");
 const classicStarEl = el("classic-star");
 const globalValueEl = el("global-value");
 const likeBtn = el("like-btn");
+const trackShareBtn = el("track-share-btn");
+const trackNotationCard = el("track-notation-card");
+
+const shareSheet = el("share-sheet");
+const shareSheetBackdrop = el("share-sheet-backdrop");
+const shareSheetChoices = el("share-sheet-choices");
+const shareOptionView = el("share-option-view");
+const shareOptionMine = el("share-option-mine");
+const shareOptionRate = el("share-option-rate");
+const shareSheetLinkRow = el("share-sheet-link-row");
+const shareSheetLinkInput = el("share-sheet-link-input");
+const shareSheetCopyBtn = el("share-sheet-copy-btn");
+const shareSheetCancel = el("share-sheet-cancel");
 
 const trackNavRow = el("track-nav-row");
 const prevTrackBtn = el("prev-track-btn");
@@ -211,6 +226,149 @@ function showToast(message) {
     toastEl.classList.remove("visible");
   }, 2600);
 }
+
+// --- Partage de liens (GD-partage) ---
+// Feuille commune aux fiches album/morceau : "Partager la fiche" = lien nu,
+// "Partager pour noter" = même lien + ?action=rate (scroll auto vers la
+// notation à l'arrivée, cf. openDeepLink). shareTarget est posé par les
+// boutons Partager de chaque fiche juste avant l'ouverture de la feuille.
+let shareTarget = null; // { type: "album" | "track", mbid }
+
+// Titre/artiste/note affichés dans le message de "Partager ma note" — lus
+// depuis l'état déjà en mémoire de la fiche ouverte (pas de nouvel appel
+// réseau). Note "possédée" par le profil courant uniquement (PP-01) : on ne
+// lit jamais la note d'un autre profil ici.
+function currentShareMeta() {
+  if (!shareTarget) return null;
+  if (shareTarget.type === "album") {
+    return {
+      title: currentAlbum && currentAlbum.title,
+      artist: currentAlbum && currentAlbum.artist,
+      rating: albumNotation ? albumNotation.global : null,
+    };
+  }
+  if (shareTarget.type === "track") {
+    return {
+      title: track && track.title,
+      artist: track && track.artist,
+      rating: track ? track.globalRating : null,
+    };
+  }
+  return null;
+}
+
+function openShareSheet(type, mbid) {
+  if (!mbid) return;
+  shareTarget = { type, mbid };
+  shareSheetChoices.hidden = false;
+  shareSheetLinkRow.hidden = true;
+  const meta = currentShareMeta();
+  shareOptionMine.disabled = !meta || meta.rating == null;
+  shareSheet.hidden = false;
+}
+
+function closeShareSheet() {
+  shareSheet.hidden = true;
+  shareTarget = null;
+}
+
+shareSheetBackdrop.addEventListener("click", closeShareSheet);
+shareSheetCancel.addEventListener("click", closeShareSheet);
+
+// navigator.share / navigator.clipboard exigent un contexte sécurisé
+// (HTTPS, ou localhost) — indisponibles en test sur IP LAN en HTTP, entre
+// autres. execCommand("copy") n'a pas cette restriction et sert de dernier
+// recours ; si même ça échoue, le lien reste affiché et sélectionnable à la
+// main dans le champ (pas un toast qui disparaît au bout de 2,6 s).
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* on tente le repli ci-dessous */
+    }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+function showShareLinkFallback(url) {
+  shareSheetChoices.hidden = true;
+  shareSheetLinkRow.hidden = false;
+  shareSheetLinkInput.value = url;
+  shareSheetLinkInput.focus();
+  shareSheetLinkInput.select();
+}
+
+async function shareLink(mode) {
+  if (!shareTarget) return;
+  const { type, mbid } = shareTarget;
+  let url = `${window.location.origin}/${type}/${encodeURIComponent(mbid)}`;
+  if (mode === "rate") url += "?action=rate";
+
+  // "Ma note" : lien fiche simple (pas ?action=rate — le but est de montrer
+  // un avis, pas forcément de pousser à noter), enrichi d'un texte de
+  // partage avec la valeur. Ignoré si la note a disparu entre l'ouverture
+  // de la feuille et le clic (bouton normalement déjà désactivé, garde-fou).
+  let text = null;
+  if (mode === "mine") {
+    const meta = currentShareMeta();
+    if (!meta || meta.rating == null) return;
+    const what = [meta.title, meta.artist].filter(Boolean).join(" · ");
+    text = `Ma note${what ? ` pour ${what}` : ""} : ${formatNum(meta.rating)}/10`;
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share(text ? { text, url } : { url });
+      closeShareSheet();
+      return;
+    } catch {
+      // Partage annulé ou API indisponible pour cette cible : on retombe
+      // sur la copie plutôt que de laisser l'utilisateur sans rien.
+    }
+  }
+
+  const clipboardText = text ? `${text}\n${url}` : url;
+  const ok = await copyText(clipboardText);
+  if (ok) {
+    closeShareSheet();
+    showToast("Lien copié !");
+  } else {
+    showShareLinkFallback(clipboardText); // reste affiché : copie manuelle possible
+  }
+}
+
+shareOptionView.addEventListener("click", () => shareLink("view"));
+shareOptionMine.addEventListener("click", () => shareLink("mine"));
+shareOptionRate.addEventListener("click", () => shareLink("rate"));
+shareSheetCopyBtn.addEventListener("click", async () => {
+  const ok = await copyText(shareSheetLinkInput.value);
+  showToast(ok ? "Lien copié !" : "Copie impossible : sélectionne le lien à la main.");
+  shareSheetLinkInput.focus();
+  shareSheetLinkInput.select();
+});
+
+albumShareBtn.addEventListener("click", () => {
+  openShareSheet("album", currentAlbum && currentAlbum.mbid);
+});
+trackShareBtn.addEventListener("click", () => {
+  openShareSheet("track", track && track.mbid);
+});
 
 // Pop-up d'explication (album / artiste) : positionnée en absolu juste sous
 // la ligne "MA NOTATION" (ne décale rien). Fondu à l'affichage/disparition ;
@@ -1654,12 +1812,22 @@ function renderAlbumNotation() {
   albumActions.hidden = show;
   if (show) drilldownStatus.hidden = true;
 
+  // Le bouton "← Retour à l'album" en haut de .album-rating-card défile
+  // hors champ une fois qu'on a scrollé dans les critères. #album-sticky
+  // (contrairement au titre compact qu'il contient) reste, lui, toujours
+  // sticky en haut de l'écran quel que soit le scroll — son propre bouton
+  // "Retour" sert donc de raccourci permanent, visible en toute
+  // circonstance tant qu'on est en mode notation.
+  albumRatingStickyBack.hidden = !show;
+
   if (show) {
     renderAlbumFeeling();
     renderAlbumCriteria();
     renderAlbumMorceauxToggle();
   }
 }
+
+albumRatingStickyBack.addEventListener("click", exitAlbumRatingMode);
 
 // Valeur "retenue" côté serveur pour un critère (ou null).
 function savedCritValue(name) {
@@ -2774,15 +2942,75 @@ replayOnboardingBtn.addEventListener("click", () => {
 el("open-rules-btn").addEventListener("click", showRulesView);
 el("rules-back").addEventListener("click", showSettingsView);
 
+// --- Liens de partage (GD-partage) : /album/{mbid}, /track/{mbid},
+// /artist/{mbid}, avec ?action=rate ou #notation pour scroller direct vers
+// la zone de notation. Lu une seule fois au chargement (entrée dans
+// l'appli) — pas de routeur complet : la barre d'adresse n'est pas tenue à
+// jour pendant la navigation interne normale (hors périmètre, cf.
+// GAPS_ET_DECISIONS.md § Partage de liens). Un visiteur sans profil passe
+// par la porte d'entrée comme d'habitude ; pendingDeepLink survit à cette
+// étape (même page, pas de vraie navigation) et s'ouvre juste après. ---
+
+const DEEP_LINK_PATTERNS = {
+  album: /^\/album\/([^/]+)\/?$/,
+  track: /^\/track\/([^/]+)\/?$/,
+  artist: /^\/artist\/([^/]+)\/?$/,
+};
+
+function parseDeepLink() {
+  const path = window.location.pathname;
+  for (const type of Object.keys(DEEP_LINK_PATTERNS)) {
+    const m = path.match(DEEP_LINK_PATTERNS[type]);
+    if (!m) continue;
+    const wantsRate =
+      new URLSearchParams(window.location.search).get("action") === "rate" ||
+      window.location.hash === "#notation";
+    return { type, mbid: decodeURIComponent(m[1]), action: wantsRate ? "rate" : null };
+  }
+  return null;
+}
+
+let pendingDeepLink = parseDeepLink();
+
+async function openDeepLink(link) {
+  try {
+    if (link.type === "album") {
+      await openAlbum({ mbid: link.mbid });
+      if (link.action === "rate") albumNotationEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (link.type === "track") {
+      await loadTrack(link.mbid);
+      if (link.action === "rate") trackNotationCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (link.type === "artist") {
+      await openArtist({ mbid: link.mbid, name: "" });
+    }
+  } catch {
+    showToast("Impossible d'ouvrir le lien partagé.");
+    showSearchView();
+  } finally {
+    // Entrée à usage unique : on nettoie l'URL pour éviter de rouvrir la
+    // même fiche à chaque rafraîchissement, une fois qu'on a atterri dessus.
+    history.replaceState(null, "", "/");
+  }
+}
+
 // --- Démarrage : on récupère la config (mode admin ?), on valide un éventuel
 // jeton admin mémorisé, puis on ouvre l'appli ou la porte d'entrée. ---
 
 function startApp() {
   refreshProfileUI();
+  const openInitialView = () => {
+    if (pendingDeepLink) {
+      const link = pendingDeepLink;
+      pendingDeepLink = null;
+      openDeepLink(link);
+    } else {
+      showSearchView();
+    }
+  };
   if (!hasSeenOnboarding(profile)) {
-    showOnboarding(() => showSearchView());
+    showOnboarding(openInitialView);
   } else {
-    showSearchView();
+    openInitialView();
   }
 }
 

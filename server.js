@@ -501,6 +501,21 @@ function getOrCreateTrackRow(mbid, profile, meta = {}) {
     .get(mbid, profile);
 
   if (!row) {
+    // Lien partagé (GD-partage) : le destinataire arrive directement sur
+    // /track/{mbid} sans être passé par la recherche, donc sans meta
+    // MusicBrainz en main. On réutilise titre/album/artiste d'une ligne
+    // existante d'un AUTRE profil pour ce même mbid plutôt que de créer un
+    // morceau "inconnu" — lecture seule de champs descriptifs, jamais de la
+    // notation (PP-01 intact : chaque profil garde sa propre ligne).
+    let fallback = null;
+    if (!meta.title && !meta.artist) {
+      fallback = db
+        .prepare(
+          `SELECT track_title, album, artist, duration_ms, release_date, release_mbid
+             FROM ratings WHERE mbid = ? AND entity_type = 'track' LIMIT 1`
+        )
+        .get(mbid);
+    }
     const info = db
       .prepare(
         `INSERT INTO ratings (mbid, profile, track_title, album, artist, duration_ms, release_date, release_mbid)
@@ -509,12 +524,12 @@ function getOrCreateTrackRow(mbid, profile, meta = {}) {
       .run(
         mbid,
         profile,
-        meta.title || "Morceau inconnu",
-        meta.album || "Album inconnu",
-        meta.artist || "Artiste inconnu",
-        meta.durationMs ?? null,
-        meta.date ?? null,
-        meta.releaseMbid || null
+        meta.title || fallback?.track_title || "Morceau inconnu",
+        meta.album || fallback?.album || "Album inconnu",
+        meta.artist || fallback?.artist || "Artiste inconnu",
+        meta.durationMs ?? fallback?.duration_ms ?? null,
+        meta.date ?? fallback?.release_date ?? null,
+        meta.releaseMbid || fallback?.release_mbid || null
       );
     row = db.prepare(`SELECT * FROM ratings WHERE id = ?`).get(info.lastInsertRowid);
   }
@@ -1651,8 +1666,14 @@ const MIME_TYPES = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+// Liens de partage (GD-partage) : /album/{mbid}, /track/{mbid}, /artist/{mbid}
+// sont des routes purement client (SPA) — aucun fichier ne porte ce nom sur
+// disque, donc sans ce fallback elles tombaient en 404 au premier accès
+// direct (lien reçu par SMS/WhatsApp, jamais passé par la recherche interne).
+const DEEP_LINK_PATH = /^\/(album|track|artist)\/[^/]+\/?$/;
+
 function serveStatic(pathname, res) {
-  let filePath = pathname === "/" ? "/index.html" : pathname;
+  let filePath = pathname === "/" || DEEP_LINK_PATH.test(pathname) ? "/index.html" : pathname;
   filePath = path.join(PUBLIC_DIR, filePath);
 
   if (!filePath.startsWith(PUBLIC_DIR)) {

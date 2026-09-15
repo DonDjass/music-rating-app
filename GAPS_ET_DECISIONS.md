@@ -7,6 +7,107 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Partage de liens directs (album / morceau) — demande explicite 2026-09-15
+
+Spec fournie par l'utilisateur : `/album/{mbid}`, `/track/{mbid}` (et
+`/artist/{mbid}` en réserve de routing), bouton "Partager" avec deux modes
+(fiche nue / lien + scroll vers la notation), flow profil léger transparent
+pour un visiteur sans profil, isolation stricte des notations (PP-01).
+
+- **Fallback SPA côté serveur** (`server.js`, `serveStatic`) : ces routes
+  n'existaient pas du tout avant — tout chemin non-`/api/` était traité comme
+  un nom de fichier littéral sur disque, donc 404 sec sur un lien reçu par
+  SMS/WhatsApp. Un regex dédié (`DEEP_LINK_PATH`) fait retomber
+  `/album/*`, `/track/*`, `/artist/*` sur `index.html`, sans toucher au
+  comportement des vrais fichiers statiques (toujours 404 si absents).
+- **Pas de routeur complet côté client** : l'appli n'avait aucun
+  `history.pushState` avant cette tâche — tout est piloté par état JS en
+  mémoire. Choix assumé : l'URL de partage n'est qu'un **point d'entrée à
+  usage unique**, lu une fois au chargement (`parseDeepLink`) puis nettoyée
+  (`history.replaceState(null, "", "/")`) une fois la fiche ouverte. La
+  barre d'adresse n'est PAS tenue à jour pendant la navigation interne
+  normale ensuite (naviguer vers un autre morceau ne change pas l'URL) —
+  un vrai routeur SPA est un chantier à part, hors périmètre de cette tâche
+  qui ne demandait que l'accès direct par lien, pas une adresse permanente
+  pendant toute la session.
+- **Retour "transparent" après création de profil** : plus simple que
+  suggéré dans la spec — comme il n'y a jamais de vraie navigation serveur
+  (tout se passe sur le même chargement de page), il suffit de mémoriser la
+  cible (`pendingDeepLink`) avant d'afficher la porte d'entrée
+  (`showProfileGate`) et de l'ouvrir juste après `startApp()`. Pas de
+  redirection réelle, pas de paramètre à faire survivre à un aller-retour
+  réseau.
+- **Gap découvert et corrigé — métadonnées d'un morceau jamais noté par le
+  destinataire** : `getOrCreateTrackRow` créait un morceau "Morceau
+  inconnu" / "Artiste inconnu" quand le profil courant n'avait pas encore
+  de ligne ET qu'aucune meta n'était fournie en query (cas normal en venant
+  de la recherche, mais PAS d'un lien direct : le destinataire n'a jamais
+  cherché ce morceau). Corrigé en réutilisant, en lecture seule, le
+  titre/artiste/album d'une ligne existante d'un AUTRE profil pour le même
+  mbid quand aucune meta n'est fournie — jamais sa notation. `/album/{mbid}`
+  n'a pas ce problème : les tracklists sont toujours récupérées en direct
+  depuis MusicBrainz, indépendamment de tout profil.
+- **Bouton "Partager"** : un seul bouton rond (icône SVG de partage
+  standard iOS/Android, même gabarit que "J'aime") sur les fiches album et
+  morceau, ouvrant une feuille commune à **trois** options ("Partager la
+  fiche" / "Partager ma note" / "Partager pour noter" — 3ᵉ mode ajouté après
+  coup, demande explicite 2026-09-15). Utilise `navigator.share` (partage
+  natif mobile — liste d'apps WhatsApp/Insta/etc., disponible uniquement en
+  contexte sécurisé HTTPS/localhost) quand disponible, sinon copie le lien
+  dans le presse-papiers avec confirmation toast. Fiche artiste non équipée
+  du bouton (pas encore prête, hors scope confirmé), mais le routing
+  `/artist/{mbid}` est déjà en place et fonctionnel.
+- **Wording des 3 options** (retour utilisateur) : "Partager la fiche" /
+  "Partager ma note" / **"Inviter à noter"** (au lieu de "Partager pour
+  noter" — plus direct, incitatif).
+- **Gap pré-existant trouvé en marge du partage, corrigé** : l'écran de
+  notation d'un album ("Noter l'album") a toujours eu un bouton "← Retour à
+  l'album", mais il est en haut de l'écran et défile hors champ une fois
+  qu'on a scrollé dans les critères — sans re-scroller tout en haut, aucun
+  moyen de revenir à la tracklist. Corrigé en rendant le **titre sticky**
+  (déjà visible en permanence pendant le scroll, `#album-sticky-title`)
+  cliquable pour sortir du mode notation, uniquement quand ce mode est
+  actif (`albumCardForced`). Couvre les deux pistes proposées par
+  l'utilisateur (titre cliquable / bouton retour) en une seule solution.
+- **"Partager ma note"** : lien fiche **simple** (pas `?action=rate` — le
+  but est de montrer un avis, pas de pousser à noter), enrichi d'un texte
+  de partage ("Ma note pour X · Y : Z/10") lu depuis l'état déjà en mémoire
+  de la fiche ouverte (aucun appel réseau supplémentaire, jamais la note
+  d'un autre profil — PP-01). Bouton désactivé si le profil courant n'a pas
+  encore noté l'élément (sinon "note : —/10" n'a pas de sens).
+- **Testé manuellement** (curl, isolation PP-01) : un nouveau profil
+  (`X-Profile` inédit) consultant `/api/tracks/{mbid}` d'un morceau déjà
+  noté par Don voit le vrai titre/artiste/album mais `globalRating: null` ;
+  la note de Don (8.7) reste inchangée après cette lecture. Fallback SPA
+  vérifié sur les 3 routes (200 + contenu = `index.html`), 404 toujours
+  actif sur un vrai fichier absent. Lignes de test supprimées après coup.
+- **Non testé en navigateur réel** (extension Claude in Chrome refusée
+  cette session) : le flow visuel (bouton Partager → feuille → partage
+  natif/presse-papiers, scroll vers la notation, porte d'entrée → retour
+  auto sur la fiche) n'a été vérifié que par lecture de code + tests
+  serveur (curl). À valider manuellement avant de considérer la tâche
+  100 % close.
+- **Bug critique trouvé en test réel (téléphone)** : `index.html`
+  référençait `style.css`/`app.js` en chemin **relatif**. Sur `/track/{mbid}`,
+  le navigateur les résolvait en `/track/style.css` et `/track/app.js` —
+  qui matchaient (à tort) le regex de fallback SPA et recevaient le HTML au
+  lieu du vrai CSS/JS. Résultat : aucun style, aucun JS exécuté, page brute
+  avec juste la barre d'onglets (visible par défaut, sans attribut
+  `hidden`) et tout le reste caché (attribut HTML `hidden` par défaut,
+  jamais levé puisque le JS n'avait jamais tourné). Corrigé en passant ces
+  deux références en chemin absolu (`/style.css`, `/app.js`) — la vraie
+  cause derrière le "je clique sur le lien → page blanche" remonté par
+  l'utilisateur, pas un souci de flow applicatif.
+- **Correctif post-test utilisateur (téléphone, IP LAN en HTTP)** :
+  `navigator.share`/`navigator.clipboard` exigent un contexte sécurisé
+  (HTTPS ou localhost) — indisponibles en HTTP sur IP LAN, ce qui faisait
+  retomber sur un toast affichant le lien 2,6 s sans pouvoir le copier, et
+  sans sélecteur de canal natif. Corrigé : repli par `execCommand("copy")`
+  (fonctionne en HTTP) puis, en dernier recours, le lien reste affiché dans
+  un champ sélectionnable de la feuille (pas un toast qui disparaît). En
+  HTTPS (prod), `navigator.share` fonctionnera normalement dès le premier
+  essai — ce correctif ne concerne que les contextes non sécurisés.
+
 ## Mosaïque d'accueil "Tout" : plafond abaissé à 2 morceaux + pochette sur "+N autres" — demande explicite 2026-09-15
 
 Constat : en vue "Tout", la tuile Album agrégée affiche la même pochette que
