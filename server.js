@@ -781,7 +781,9 @@ function recomputeAlbumForRelease(releaseMbid, profile) {
 }
 
 // État complet de la notation d'un album, pour le client (profil courant).
-function serializeAlbumNotation(releaseMbid, totalCount, profile) {
+// `readonly` (GD-consultation) : consultation de la ligne d'UN AUTRE profil —
+// on lit ses stats mais on ne mémorise jamais rien sur sa ligne (PP-01).
+function serializeAlbumNotation(releaseMbid, totalCount, profile, readonly = false) {
   const row = getAlbumRow(releaseMbid, profile);
   const ratingId = row ? row.id : null;
 
@@ -789,7 +791,7 @@ function serializeAlbumNotation(releaseMbid, totalCount, profile) {
   // MusicBrainz) ; on en profite pour le mémoriser sur la ligne album.
   let total = totalCount;
   if (total == null && row) total = row.album_track_count;
-  if (row && total != null && total !== row.album_track_count) {
+  if (!readonly && row && total != null && total !== row.album_track_count) {
     db.prepare(`UPDATE ratings SET album_track_count = ? WHERE id = ?`).run(total, row.id);
   }
 
@@ -1208,15 +1210,19 @@ async function handleResolveAlbum(title, artist, res) {
 
 // `mbid` = release, OU `rgMbid` = release-group (résolu en une release ; utile
 // pour la discographie d'un artiste qui liste des release-groups).
-async function handleAlbumTracks(mbid, rgMbid, profile, res) {
+// `viewProfile` (GD-consultation) : affiche les notes de CE profil (tuile
+// d'accueil "Tout le monde") au lieu de celles du profil courant — lecture
+// seule, aucun recalcul/écriture déclenché sur sa ligne (PP-01).
+async function handleAlbumTracks(mbid, rgMbid, profile, viewProfile, res) {
   try {
     let releaseMbid = mbid || null;
     if (!releaseMbid && rgMbid) releaseMbid = await releaseFromGroup(rgMbid);
     if (!releaseMbid) return sendJson(res, 400, { error: "mbid manquant." });
 
     const data = await getReleaseTracks(releaseMbid);
+    const displayProfile = viewProfile || profile;
 
-    // Enrichit chaque morceau avec la NOTE GLOBALE du profil courant (null si
+    // Enrichit chaque morceau avec la NOTE GLOBALE du profil affiché (null si
     // non noté), et indique si CE profil "aime" l'album.
     const mbids = data.tracks.map((t) => t.mbid).filter(Boolean);
     const ratingByMbid = {};
@@ -1227,7 +1233,7 @@ async function handleAlbumTracks(mbid, rgMbid, profile, res) {
           `SELECT mbid, global_rating FROM ratings
             WHERE profile = ? AND mbid IN (${placeholders})`
         )
-        .all(profile, ...mbids);
+        .all(displayProfile, ...mbids);
       for (const row of rows) ratingByMbid[row.mbid] = row.global_rating;
     }
     data.tracks = data.tracks.map((t) => ({
@@ -1237,9 +1243,13 @@ async function handleAlbumTracks(mbid, rgMbid, profile, res) {
 
     const albumRow = db
       .prepare(`SELECT is_liked FROM ratings WHERE mbid = ? AND profile = ?`)
-      .get(releaseMbid, profile);
+      .get(releaseMbid, displayProfile);
     data.releaseMbid = releaseMbid;
     data.isLiked = !!(albumRow && albumRow.is_liked);
+
+    // Consultation pure (viewProfile) : on s'arrête là, aucun recalcul ni
+    // écriture sur la ligne d'un profil qu'on ne fait que regarder.
+    if (viewProfile) return sendJson(res, 200, data);
 
     // Mémorise le nombre total de morceaux sur la ligne album du profil (si
     // elle existe) : sert au calcul de couverture, y compris lors d'un recalcul
@@ -1270,7 +1280,20 @@ async function handleArtistPage(mbid, profile, res) {
   }
 }
 
+// `viewProfile` (GD-consultation) : consulter en lecture seule la notation
+// d'UN AUTRE profil (depuis une tuile d'accueil "Tout le monde"), jamais la
+// sienne. Simple SELECT, JAMAIS getOrCreateTrackRow — on ne doit ni créer ni
+// modifier la ligne d'un profil qu'on ne fait que regarder (PP-01).
 function handleGetTrack(mbid, searchParams, profile, res) {
+  const viewProfile = searchParams.get("viewProfile");
+  if (viewProfile) {
+    const row = db
+      .prepare(`SELECT * FROM ratings WHERE mbid = ? AND profile = ? AND entity_type = 'track'`)
+      .get(mbid, viewProfile);
+    if (!row) return sendJson(res, 404, { error: "Notation introuvable." });
+    return sendJson(res, 200, serializeRow(row));
+  }
+
   const meta = {
     title: searchParams.get("title"),
     artist: searchParams.get("artist"),
@@ -1509,7 +1532,17 @@ function albumTotalFromQuery(searchParams) {
 
 function handleGetAlbumNotation(releaseMbid, searchParams, profile, res) {
   if (!releaseMbid) return sendJson(res, 400, { error: "mbid manquant." });
-  sendJson(res, 200, serializeAlbumNotation(releaseMbid, albumTotalFromQuery(searchParams), profile));
+  const viewProfile = searchParams.get("viewProfile");
+  sendJson(
+    res,
+    200,
+    serializeAlbumNotation(
+      releaseMbid,
+      albumTotalFromQuery(searchParams),
+      viewProfile || profile,
+      !!viewProfile
+    )
+  );
 }
 
 function applyAlbumTotal(row, total) {
@@ -1929,6 +1962,7 @@ const server = http.createServer(async (req, res) => {
         url.searchParams.get("mbid"),
         url.searchParams.get("rg"),
         profile,
+        url.searchParams.get("viewProfile"),
         res
       );
     }

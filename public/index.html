@@ -58,6 +58,14 @@
     <section id="drilldown-view" hidden>
       <button id="back-from-drilldown" class="drilldown-back" type="button">← Retour aux résultats</button>
 
+      <!-- Consultation (GD-consultation) : voir le commentaire équivalent
+           sur #track-viewing-banner. Couvre aussi la tracklist (chaque
+           morceau affiche la note de ce même profil). -->
+      <div class="viewing-banner" id="album-viewing-banner" hidden>
+        <span>Notation de <strong id="album-viewing-profile-name"></strong></span>
+        <button class="viewing-banner-btn" id="album-viewing-rate-btn" type="button">Noter</button>
+      </div>
+
       <header class="album-header" id="album-header" hidden>
         <div class="cover-art" aria-hidden="true">♪</div>
         <div class="track-meta">
@@ -470,6 +478,14 @@
       <div class="track-nav-row" id="track-nav-row" hidden>
         <button id="prev-track-btn" class="track-nav-btn" type="button">‹ Précédent</button>
         <button id="next-track-btn" class="track-nav-btn" type="button">Suivant ›</button>
+      </div>
+
+      <!-- Consultation (GD-consultation) : tuile d'accueil "Tout le monde"
+           d'un autre profil. Lecture seule tant qu'on n'a pas tapé "Noter" —
+           voir GAPS_ET_DECISIONS.md. -->
+      <div class="viewing-banner" id="track-viewing-banner" hidden>
+        <span>Notation de <strong id="track-viewing-profile-name"></strong></span>
+        <button class="viewing-banner-btn" id="track-viewing-rate-btn" type="button">Noter</button>
       </div>
 
       <header class="track-header" id="track-header">

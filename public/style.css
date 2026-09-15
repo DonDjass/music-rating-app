@@ -725,6 +725,39 @@ body {
   padding: 0 0 6px;
 }
 
+/* Bannière de consultation (GD-consultation) : notation d'un autre profil,
+   lecture seule. Couleur distincte du reste de l'UI (pas doré ni gris
+   habituel) pour qu'on ne confonde jamais ça avec sa propre notation. */
+.viewing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(244, 196, 48, 0.1);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--white);
+}
+
+.viewing-banner strong {
+  color: var(--gold);
+}
+
+.viewing-banner-btn {
+  background: var(--gold);
+  border: none;
+  color: #171412;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .track-meta .tags {
   margin: 4px 0 0;
   color: var(--grey);
@@ -830,6 +863,15 @@ body {
 
 .like-btn.liked {
   color: var(--heart-pink);
+}
+
+/* Consultation (GD-consultation) : verrouillé tant qu'on n'a pas tapé
+   "Noter" dans la bannière — même traitement que .album-action-btn. */
+.like-btn:disabled,
+.pill-toggle:disabled,
+.classic-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Bouton "Partager" (GD-partage) : même gabarit rond que .like-btn, sans état

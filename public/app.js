@@ -4,11 +4,19 @@ let track = null; // dernier état enregistré, renvoyé par le serveur
 let editing = null; // 'feeling' | 'criteria' | null
 let currentSection = "search"; // 'home' | 'search' | 'my-ratings' | 'settings' — onglet actif
 
-// Contexte "album" : { tracks: [...], index } quand le morceau affiché vient
-// de la tracklist d'un album (drill-down) — permet Précédent/Suivant.
-// Reste à null si on est arrivé par un résultat direct, un artiste ou
-// "Mes notations" (pas d'ordre naturel dans ces cas).
+// Contexte "album" : { tracks: [...], index, viewProfile } quand le morceau
+// affiché vient de la tracklist d'un album (drill-down) — permet
+// Précédent/Suivant, et propage la consultation (viewProfile) d'un morceau
+// à l'autre au sein du même album. Reste à null si on est arrivé par un
+// résultat direct, un artiste ou "Mes notations" (pas d'ordre naturel).
 let albumContext = null;
+
+// Consultation (GD-consultation) : non-null = on affiche en LECTURE SEULE la
+// notation de CE profil (tuile d'accueil "Tout le monde" appartenant à
+// quelqu'un d'autre), jamais la sienne tant qu'on n'a pas tapé "Noter".
+// null = comportement normal (sa propre notation, éditable).
+let trackViewProfile = null;
+let albumViewProfile = null;
 
 let feelingDraft = null; // valeur en cours d'édition (nombre ou null)
 let criteriaDraft = { performance: null, texte: null, production: null };
@@ -143,6 +151,13 @@ const globalValueEl = el("global-value");
 const likeBtn = el("like-btn");
 const trackShareBtn = el("track-share-btn");
 const trackNotationCard = el("track-notation-card");
+
+const trackViewingBanner = el("track-viewing-banner");
+const trackViewingProfileName = el("track-viewing-profile-name");
+const trackViewingRateBtn = el("track-viewing-rate-btn");
+const albumViewingBanner = el("album-viewing-banner");
+const albumViewingProfileName = el("album-viewing-profile-name");
+const albumViewingRateBtn = el("album-viewing-rate-btn");
 
 const shareSheet = el("share-sheet");
 const shareSheetBackdrop = el("share-sheet-backdrop");
@@ -582,7 +597,27 @@ function renderTrackNav() {
   nextTrackBtn.disabled = albumContext.index >= albumContext.tracks.length - 1;
 }
 
+// Consultation (GD-consultation) : bannière "Notation de X" + verrouillage
+// de toute action d'écriture tant qu'on n'a pas tapé "Noter" (PP-01 — jamais
+// écrire sous son propre profil en affichant celui d'un autre).
+function renderTrackViewingBanner() {
+  const viewing = !!trackViewProfile;
+  trackViewingBanner.hidden = !viewing;
+  if (viewing) trackViewingProfileName.textContent = trackViewProfile;
+
+  feelingToggle.disabled = viewing;
+  criteriaToggle.disabled = viewing;
+  classicBtn.disabled = viewing;
+  likeBtn.disabled = viewing;
+  trackShareBtn.hidden = viewing; // "Partager ma note" n'a pas de sens ici
+}
+
+trackViewingRateBtn.addEventListener("click", () => {
+  loadTrack(track.mbid, {}, albumContext);
+});
+
 function render() {
+  renderTrackViewingBanner();
   trackTitleEl.textContent = track.title;
   trackArtistEl.textContent = track.artist;
   trackAlbumEl.textContent = track.albumTitle;
@@ -844,7 +879,7 @@ async function openArtistByName(name) {
   }
 }
 
-async function openAlbumByName(title, artist) {
+async function openAlbumByName(title, artist, viewProfile = null) {
   if (!title || title === "Album inconnu") return;
   showToast("Recherche de l'album…");
   try {
@@ -852,7 +887,7 @@ async function openAlbumByName(title, artist) {
       `/api/resolve-album?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist || "")}`,
       "GET"
     );
-    if (album) openAlbum(album);
+    if (album) openAlbum(album, viewProfile);
     else showToast("Fiche album introuvable.");
   } catch (err) {
     showToast("Fiche album introuvable.");
@@ -871,10 +906,15 @@ albumArtistEl.addEventListener("click", () => {
 
 trackAlbumEl.addEventListener("click", () => {
   if (!trackAlbumEl.classList.contains("linkable")) return;
+  // Continuité de la consultation (GD-consultation) : si on regarde le
+  // morceau de Don, l'album qu'on ouvre depuis là montre aussi ses notes.
   if (track.releaseMbid) {
-    openAlbum({ mbid: track.releaseMbid, title: track.albumTitle, artist: track.artist });
+    openAlbum(
+      { mbid: track.releaseMbid, title: track.albumTitle, artist: track.artist },
+      trackViewProfile
+    );
   } else {
-    openAlbumByName(track.albumTitle, track.artist);
+    openAlbumByName(track.albumTitle, track.artist, trackViewProfile);
   }
 });
 
@@ -1068,6 +1108,7 @@ function capTracksPerAlbum(tracks, maxPerAlbum) {
       album: kept[0].album,
       artist: kept[0].artist,
       releaseMbid: kept[0].releaseMbid,
+      profile: kept[0].profile,
       count: rest.length,
       // Placée à la date du premier morceau exclu : apparaît dans le fil,
       // triée par date, exactement là où ce morceau serait apparu.
@@ -1163,7 +1204,10 @@ function createHomeMoreTile(item) {
   label.textContent = item.count > 1 ? "autres" : "autre";
   tile.appendChild(label);
 
-  tile.addEventListener("click", () => openAlbumByName(item.album, item.artist));
+  tile.addEventListener("click", () => {
+    const viewProfile = item.profile && item.profile !== profile ? item.profile : null;
+    openAlbumByName(item.album, item.artist, viewProfile);
+  });
   tileCoverObserver.observe(tile);
   return tile;
 }
@@ -1210,19 +1254,30 @@ function createHomeTile(item) {
   return tile;
 }
 
+// Consultation (GD-consultation) : une tuile d'accueil "Tout le monde"
+// appartenant à un AUTRE profil ouvre sa fiche en lecture seule (cf.
+// renderTrackViewingBanner / renderAlbumViewingBanner). Une tuile
+// t'appartenant (mode "Mes notations", ou la tienne en "Tout le monde")
+// s'ouvre normalement, éditable.
 async function openHomeTile(item) {
-  if (item.type === "album") return openAlbumByName(item.title, item.artist);
+  const viewProfile = item.profile && item.profile !== profile ? item.profile : null;
+
+  if (item.type === "album") return openAlbumByName(item.title, item.artist, viewProfile);
   if (item.type === "artist") return openArtistByName(item.artist);
 
   // morceau : la ligne existe déjà en base
   homeStatus.hidden = false;
   homeStatus.textContent = "Chargement…";
   try {
-    const context = await buildAlbumContextFor({ mbid: item.mbid, releaseMbid: item.releaseMbid });
+    const context = await buildAlbumContextFor(
+      { mbid: item.mbid, releaseMbid: item.releaseMbid },
+      viewProfile
+    );
     await loadTrack(
       item.mbid,
       { title: item.title, artist: item.artist, album: item.album, releaseMbid: item.releaseMbid },
-      context
+      context,
+      viewProfile
     );
     homeStatus.hidden = true;
   } catch (err) {
@@ -1582,6 +1637,23 @@ function renderAlbumLike(isLiked) {
   albumLikeBtn.textContent = isLiked ? "♥" : "♡";
 }
 
+// Consultation (GD-consultation) : bannière "Notation de X" + verrouillage
+// de "J'aime"/"Partager" ; "Noter l'album"/"Noter les morceaux" sont gérés
+// dans renderAlbumNotation (déjà appelée à chaque changement d'album).
+function renderAlbumViewingBanner() {
+  const viewing = !!albumViewProfile;
+  albumViewingBanner.hidden = !viewing;
+  if (viewing) albumViewingProfileName.textContent = albumViewProfile;
+
+  albumLikeBtn.disabled = viewing;
+  albumShareBtn.hidden = viewing; // "Partager ma note" n'a pas de sens ici
+}
+
+albumViewingRateBtn.addEventListener("click", () => {
+  if (!currentAlbum) return;
+  openAlbum({ mbid: currentAlbum.mbid, title: currentAlbum.title, artist: currentAlbum.artist });
+});
+
 // --- Notation de l'album (ligne "MA NOTATION" : 4 notes) ---
 
 function round1(n) {
@@ -1695,7 +1767,10 @@ async function loadAlbumNotation() {
   if (!currentAlbum || !currentAlbum.mbid) return;
   const forMbid = currentAlbum.mbid;
   const total = albumTotalCount();
-  const qs = total != null ? `?total=${total}` : "";
+  const params = new URLSearchParams();
+  if (total != null) params.set("total", total);
+  if (albumViewProfile) params.set("viewProfile", albumViewProfile);
+  const qs = params.toString() ? `?${params.toString()}` : "";
   let data = null;
   try {
     data = await api(`${albumApiBase()}/notation${qs}`, "GET");
@@ -1809,7 +1884,11 @@ function renderAlbumNotation() {
   albumRatingCard.hidden = !show;
   // Écran de notation : on masque la tracklist et les boutons d'action.
   drilldownResults.hidden = show;
-  albumActions.hidden = show;
+  // Consultation (GD-consultation) : "Noter l'album"/"Noter les morceaux"
+  // verrouillés tant qu'on n'a pas tapé "Noter" dans la bannière — seul
+  // moyen d'en sortir (PP-01 : jamais d'action d'écriture pendant la
+  // consultation de la notation d'un autre profil).
+  albumActions.hidden = show || !!albumViewProfile;
   if (show) drilldownStatus.hidden = true;
 
   // Le bouton "← Retour à l'album" en haut de .album-rating-card défile
@@ -2208,7 +2287,14 @@ albumMorceauxCheck.addEventListener("change", async () => {
   }
 });
 
-async function openAlbum(album) {
+// `viewProfile` (GD-consultation) : affiche en lecture seule la notation de
+// CE profil (album ET tracklist) au lieu de la sienne, cf.
+// renderAlbumViewingBanner. Toujours null hors de la mosaïque d'accueil
+// "Tout le monde".
+async function openAlbum(album, viewProfile = null) {
+  albumViewProfile = viewProfile || null;
+  renderAlbumViewingBanner();
+
   // Mode "album" : en-tête riche (pochette + méta + actions), pas le titre simple.
   albumHeader.hidden = false;
   albumSticky.hidden = false;
@@ -2241,7 +2327,8 @@ async function openAlbum(album) {
     const qs = album.mbid
       ? `mbid=${encodeURIComponent(album.mbid)}`
       : `rg=${encodeURIComponent(album.releaseGroupMbid)}`;
-    const data = await api(`/api/album-tracks?${qs}`, "GET");
+    const viewQs = albumViewProfile ? `&viewProfile=${encodeURIComponent(albumViewProfile)}` : "";
+    const data = await api(`/api/album-tracks?${qs}${viewQs}`, "GET");
     const tracks = data.tracks || [];
     setDrilldownStatus(null);
 
@@ -2286,7 +2373,9 @@ async function openAlbum(album) {
     } else {
       drilldownResults.className = "tracklist";
       tracks.forEach((r, index) => {
-        drilldownResults.appendChild(createTracklistRow(r, { tracks, index }));
+        drilldownResults.appendChild(
+          createTracklistRow(r, { tracks, index, viewProfile: albumViewProfile })
+        );
       });
     }
   } catch (err) {
@@ -2481,7 +2570,11 @@ backFromDrilldownBtn.addEventListener("click", showSearchView);
 // déjà en base (résultat de recherche) ; inutile si le morceau vient de
 // "Mes notations" (la ligne existe forcément déjà). `context` (optionnel)
 // = { tracks, index } pour activer Précédent/Suivant sur cette fiche.
-async function loadTrack(mbid, meta = {}, context = null) {
+// `viewProfile` (GD-consultation) : affiche en lecture seule la notation de
+// CE profil au lieu de la sienne (cf. renderTrackViewingBanner). Toujours
+// null en dehors de la mosaïque d'accueil "Tout le monde" (recherche, lien
+// partagé, "Mes notations"... n'affichent que sa propre notation).
+async function loadTrack(mbid, meta = {}, context = null, viewProfile = null) {
   const params = new URLSearchParams({
     title: meta.title || "",
     artist: meta.artist || "",
@@ -2490,9 +2583,11 @@ async function loadTrack(mbid, meta = {}, context = null) {
     durationMs: meta.durationMs || "",
     releaseMbid: meta.releaseMbid || "",
   });
+  if (viewProfile) params.set("viewProfile", viewProfile);
 
   track = await api(`/api/tracks/${encodeURIComponent(mbid)}?${params.toString()}`, "GET");
   albumContext = context;
+  trackViewProfile = viewProfile || null;
   editing = null;
   feelingDraft = null;
   criteriaDraft = { performance: null, texte: null, production: null };
@@ -2509,7 +2604,7 @@ async function loadTrack(mbid, meta = {}, context = null) {
 async function selectTrack(result, context = null) {
   setSearchStatus("Chargement…");
   try {
-    await loadTrack(result.mbid, result, context);
+    await loadTrack(result.mbid, result, context, context && context.viewProfile);
     setSearchStatus(null);
   } catch (err) {
     setSearchStatus("Impossible de charger ce morceau. Réessaie.");
@@ -2520,13 +2615,16 @@ async function selectTrack(result, context = null) {
 
 async function goToAdjacentTrack(offset) {
   if (!albumContext) return;
-  const { tracks, index } = albumContext;
+  const { tracks, index, viewProfile } = albumContext;
   const newIndex = index + offset;
   if (newIndex < 0 || newIndex >= tracks.length) return;
 
   const nextTrack = tracks[newIndex];
   try {
-    await loadTrack(nextTrack.mbid, nextTrack, { tracks, index: newIndex });
+    // La consultation (viewProfile) suit la navigation Précédent/Suivant au
+    // sein du même album : "Noter" un morceau ne fait sortir QUE ce
+    // morceau-là du mode consultation, pas tout l'album.
+    await loadTrack(nextTrack.mbid, nextTrack, { tracks, index: newIndex, viewProfile }, viewProfile);
   } catch (err) {
     // Navigation silencieuse : en cas d'échec, on reste sur le morceau actuel.
   }
@@ -2587,14 +2685,18 @@ nextTrackBtn.addEventListener("click", () => goToAdjacentTrack(1));
 // connu), on va rechercher cette tracklist pour retrouver sa position et
 // réactiver Précédent/Suivant. Best-effort : en cas d'échec, la fiche
 // s'affiche quand même, juste sans navigation.
-async function buildAlbumContextFor(result) {
+async function buildAlbumContextFor(result, viewProfile = null) {
   if (!result.releaseMbid) return null;
   try {
-    const albumData = await api(`/api/album-tracks?mbid=${encodeURIComponent(result.releaseMbid)}`, "GET");
+    const viewQs = viewProfile ? `&viewProfile=${encodeURIComponent(viewProfile)}` : "";
+    const albumData = await api(
+      `/api/album-tracks?mbid=${encodeURIComponent(result.releaseMbid)}${viewQs}`,
+      "GET"
+    );
     const tracks = albumData.tracks || [];
     const index = tracks.findIndex((t) => t.mbid === result.mbid);
     if (index === -1) return null;
-    return { tracks, index };
+    return { tracks, index, viewProfile: viewProfile || null };
   } catch (err) {
     return null;
   }

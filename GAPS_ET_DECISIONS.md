@@ -7,6 +7,51 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Consultation en lecture seule depuis la mosaïque d'accueil — demande explicite 2026-09-15
+
+Contexte : en mode "Tout le monde", une tuile d'accueil peut appartenir à un
+autre profil. Jusqu'ici, cliquer dessus ouvrait la fiche sous **ton** profil
+(comportement voulu à l'époque, cf. § Mosaïque "Tout le monde" — "ça t'invite
+à noter à ton tour"). Nouveau comportement, remplace celui-là : la fiche
+s'ouvre désormais en **lecture seule sur la notation de la personne qui a
+noté**, avec un bouton "Noter" pour basculer sur la tienne.
+
+- **Bannière "Notation de X"** (morceau ET album) tant qu'on n'a pas tapé
+  "Noter" : toute action d'écriture est verrouillée (sliders, Classic,
+  J'aime — `disabled` natif, pas juste visuel) pour garantir qu'aucune
+  interaction n'écrive sous son propre profil pendant qu'on regarde celle
+  d'un autre (PP-01). Bouton "Partager" masqué en consultation ("Partager
+  ma note" n'aurait pas de sens sur la note de quelqu'un d'autre).
+- **Tracklist album incluse** (demande explicite) : consulter l'album de Don
+  montre aussi ses notes par morceau dans la tracklist — pas seulement le
+  résumé "MA NOTATION". "Noter l'album"/"Noter les morceaux" verrouillés en
+  bloc tant qu'on n'a pas tapé "Noter".
+- **Endpoints en lecture seule ajoutés** : `?viewProfile=X` sur
+  `/api/tracks/:mbid`, `/api/album-tracks`, `/api/albums/:mbid/notation` —
+  toujours un simple SELECT côté serveur (jamais `getOrCreateTrackRow` ni
+  recalcul/`UPDATE` sur la ligne du profil consulté), pour ne produire
+  aucun effet de bord sur les données de quelqu'un d'autre en se contentant
+  de les regarder.
+- **Granularité du "Noter"** : chaque fiche (morceau ou album) a son propre
+  bouton "Noter", qui ne bascule QUE cette fiche-là sur son propre profil.
+  Naviguer Précédent/Suivant dans un album consulté reste en consultation
+  (le `viewProfile` voyage avec le contexte album) tant qu'on ne retape pas
+  "Noter" — noter un morceau au passage ne fait pas sortir tout l'album du
+  mode consultation.
+- **Hors scope, comme convenu** : tuiles Artiste (pas d'écran de notation
+  éditable équivalent) ; recherche, lien partagé et "Mes notations"
+  n'entrent jamais en consultation (toujours sa propre notation).
+- **Testé** (curl) : un profil sans rien noté (`TestViewer`) consultant
+  l'album `c8b50c77…` (Booba, D.U.C., noté par Don) voit la vraie note
+  globale (7.7), le feeling (8) ET les notes par morceau de Don dans la
+  tracklist (8.8, 8.5, 7.3…) ; sa propre notation (sans `viewProfile`) reste
+  vide ; la notation de Don est identique avant/après consultation ; aucune
+  ligne écrite pour Don pendant le test. Ligne de test supprimée après coup.
+- **Non testé en navigateur réel** — même limite que pour le partage de
+  liens (pas d'accès à l'extension Chrome cette session). À valider
+  manuellement, notamment l'enchaînement Précédent/Suivant en consultation
+  et le retour visuel du verrouillage des sliders.
+
 ## Partage de liens directs (album / morceau) — demande explicite 2026-09-15
 
 Spec fournie par l'utilisateur : `/album/{mbid}`, `/track/{mbid}` (et
