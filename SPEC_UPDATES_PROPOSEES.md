@@ -12,8 +12,10 @@
 > déjà dans le TRS. Chaque proposition est `À VALIDER` tant qu'elle n'est pas
 > portée dans l'Excel.
 >
-> Mise à jour : 2026-09-09. Traçabilité détaillée côté implémentation :
-> `GAPS_ET_DECISIONS.md` (§R0–R15, §GD-00002-x).
+> Mise à jour : 2026-09-16. Traçabilité détaillée côté implémentation :
+> `GAPS_ET_DECISIONS.md` (§R0–R15, §GD-00002-x, et les entrées datées
+> 2026-09-10 à 2026-09-16 pour tout ce qui est postérieur à la précédente
+> mise à jour de ce document).
 
 ---
 
@@ -366,19 +368,77 @@ morceaux**. Le bloc « MA NOTATION » affiche 4 notes.
   par critères }, en excluant les notes non renseignées. Arrondi au dixième.
   Non renseignée si aucune des trois ne l'est. *(Même logique que
   `CR-00060`→`CR-00063` au niveau morceau, transposée.)*
-- `BR-000XX` — **Notation au feeling** et **Notation par critères** au niveau
-  album / artiste : **non développées pour l'instant**, affichées « — ».
-  Aujourd'hui, la NOTE GLOBALE album/artiste = la Notation morceaux. La
-  formule ci-dessus est actée pour intégrer feeling/critères sans changement
-  de règle une fois développés.
+- **MISE À JOUR (2026-09-10) — Notation au feeling et par critères ALBUM
+  développées**, cf. nouvelle section B5bis ci-dessous. Reste non développé :
+  au niveau **artiste** uniquement (toujours « — », NOTE GLOBALE artiste =
+  Notation morceaux). La formule ci-dessus (moyenne des 3 notes disponibles)
+  est confirmée par l'implémentation album, sans changement de règle.
 - `BR-000XX` — Les critères par niveau ne sont **pas** ceux du morceau :
-  Performance/Texte/Production sont propres au morceau. Les jeux de critères
-  album et artiste restent **à spécifier**.
+  Performance/Texte/Production sont propres au morceau. Le jeu de critères
+  **album** est désormais spécifié (cf. B5bis) ; celui de l'**artiste** reste
+  à spécifier.
 - `BR-000XX` — Toutes les notes affichées le sont **avec une décimale**
   (ex. « 8,5 »), jamais arrondies à l'entier.
 - `BR-000XX` — Un **statut « Classic »** au niveau album et artiste est
   prévu (emplacement affiché) mais **non développé** ; inactif, « Bientôt
   disponible » au clic.
+
+## B5bis. Notation d'un album (GD-00003) — feeling + critères développés
+
+**Contexte :** implémenté le 2026-09-10 (source détaillée :
+`PRODUCT_SPEC_NOTATION_ALBUM.md`, règles `VALIDATED`). Remplace les
+placeholders « — » de B5 pour la NOTE AU FEELING et la NOTE PAR CRITÈRES
+album. Trois écarts assumés par rapport à `PRODUCT_SPEC_NOTATION_ALBUM.md`
+sont détaillés en fin de section.
+
+**Statut : `À VALIDER`** (spec de référence existante, mais 3 écarts à
+arbitrer avant report dans le TRS — cf. plus bas).
+
+- `RQ-000XX` — Le système doit permettre de noter un album au feeling et
+  par critères, selon le même principe que la notation d'un morceau.
+- `BR-000XX` — **5 critères album** : Performance, Texte, Production,
+  Cohérence, Créativité. Les trois premiers peuvent être **hérités** des
+  morceaux notés de l'album (moyenne, resynchronisée automatiquement tant
+  qu'ils ne sont pas ajustés manuellement) ; Cohérence et Créativité sont
+  toujours saisis manuellement (pas de source « morceaux »).
+- `BR-000XX` — **NOTE AU FEELING album** : peut être saisie manuellement ou
+  **calculée depuis les morceaux** (moyenne des NOTE AU FEELING morceaux
+  renseignées, resynchronisée automatiquement tant qu'elle n'est pas ajustée
+  manuellement — même mécanique que les critères hérités). Disponible dès
+  qu'au moins un morceau de l'album a une NOTE AU FEELING, sans seuil de
+  couverture.
+- `BR-000XX` — **Composante « Notation morceaux » — seuil d'éligibilité** :
+  n'entre dans le calcul de la NOTE GLOBALE album que si la **couverture**
+  (morceaux notés ÷ total de morceaux de l'album) atteint **70 %**. En
+  dessous, elle reste affichée à titre informatif mais exclue du calcul. Un
+  toggle utilisateur (« Prendre en compte mes notes des morceaux ») permet
+  de l'exclure explicitement même au-dessus du seuil ; la préférence est
+  conservée si la couverture repasse sous 70 % puis au-dessus.
+- `BR-000XX` — **Protection des valeurs manuelles** : une demande de calcul
+  (critère ou feeling) qui écraserait une valeur déjà saisie manuellement
+  déclenche une confirmation avant remplacement.
+- `BR-000XX` — Chaque note affiche une **pastille de complétude** (contour
+  gris = non renseigné, demi-dorée = partiel, pleine dorée = complet) sur la
+  ligne « MA NOTATION ».
+
+**Écarts assumés vs. `PRODUCT_SPEC_NOTATION_ALBUM.md` (à arbitrer) :**
+1. **RÉINITIALISER (critères ET feeling album)** — le spec de référence dit
+   que RÉINITIALISER **restaure les valeurs héritées disponibles**
+   (Performance/Texte/Production). L'implémentation (demande explicite de
+   l'utilisateur, 2026-09-10) **vide tout sans restaurer automatiquement** —
+   l'utilisateur doit recliquer « Calculer depuis mes morceaux » s'il veut
+   les retrouver. Idem disponibilité : le spec dit RÉINITIALISER disponible
+   seulement si une saisie/modif *manuelle* peut être annulée ; l'implémentation
+   l'active dès qu'*une valeur* existe (même purement héritée).
+2. **Critères partiels étendus au cas « vide »** — le spec exige au moins un
+   critère renseigné pour enregistrer une NOTE PAR CRITÈRES album ; l'écart 1
+   ci-dessus implique qu'on peut désormais enregistrer un état **totalement
+   vide** (après RÉINITIALISER) — équivalent à une suppression. Faut-il un
+   scénario dédié « Supprimer la NOTE PAR CRITÈRES album » ?
+3. **Limite de couverture v1** — seuls les morceaux ouverts via la tracklist
+   de l'album (donc porteurs du lien `release_mbid`) comptent dans la
+   couverture et les moyennes ; un morceau du même album noté via la
+   recherche directe n'est pas rattaché.
 
 ## B6. Nouveau GD — Page d'accueil (mosaïque des dernières notations)
 
@@ -412,6 +472,37 @@ morceaux**. Le bloc « MA NOTATION » affiche 4 notes.
   aujourd'hui regroupées **par nom** (moyenne des morceaux notés), faute
   d'identifiant stable. Un morceau seulement « Classic » sans note n'apparaît
   pas (la tuile a besoin d'une note à afficher).
+
+### B6bis. MISES À JOUR (2026-09-11 → 2026-09-15) — filtre « qui », pagination, plafond par album
+
+**Statut : `À VALIDER`**
+
+- **Filtre « qui » (2026-09-11)** — nouvelle ligne de filtres au-dessus de
+  Tout/Morceaux/Albums/Artistes : **« Tout le monde »** (tous les profils
+  confondus, sélectionné par défaut) / **« Mes notations »** (comportement
+  d'origine, profil courant uniquement). En mode « Tout le monde », un même
+  morceau/album/artiste noté par plusieurs profils produit **une tuile par
+  profil** (jamais de fusion) ; le pseudo de l'auteur s'affiche dans le coin
+  haut-droite de la tuile (l'emplacement jusqu'ici réservé au futur badge
+  « noteur » — B6 le prévoyait déjà). ⚠️ **Aucun contrôle de confidentialité
+  par notation** n'existe : « Tout le monde » rend visible l'intégralité des
+  notations de tous les profils à quiconque utilise l'application, y compris
+  celles de l'administrateur. Accepté pour la bêta (usage entre amis de
+  confiance) ; une vraie option public/privé par notation reste **hors
+  périmètre**, à spécifier pour une version ultérieure.
+- **Pagination « Voir plus » (2026-09-12)** — 15 tuiles affichées à
+  l'ouverture (respecte le filtre actif), un clic sur « Voir plus » en
+  ajoute 15 de plus ; masqué s'il n'y a plus rien à charger.
+- **Plafond de morceaux par album (2026-09-12, ajusté 2026-09-15)** — pour
+  éviter qu'un album très noté ne noie la mosaïque : au-delà d'un certain
+  nombre de morceaux notés d'un même album **par le même profil**, les
+  suivants sont remplacés par une tuile de synthèse **« +N autres »**
+  (pochette assombrie, sans note affichée), positionnée chronologiquement à
+  la date du premier morceau exclu. Plafond de **3** en vue « Morceaux »
+  (pas de tuile Album concurrente) ; de **2** en vue « Tout » (la tuile Album
+  agrégée y occupe la 3ᵉ place — sans ce plafond réduit, un album très noté
+  produisait jusqu'à 4 tuiles avec la même pochette). Un clic sur la tuile
+  « +N autres » ouvre la tracklist complète de l'album.
 
 ## B7. Pochettes — source et contrainte légale
 
@@ -505,23 +596,102 @@ plusieurs personnes sur la même instance, notations séparées, sans comptes.
 - **Hors périmètre (à cadrer plus tard) :** agrégation entre profils,
   comparaison communautaire (`RQ-00007`), gestion/renommage/fusion de profils,
   protection au niveau de chaque requête API (le code à 4 chiffres n'est
-  vérifié qu'à la connexion), transport chiffré (HTTPS).
+  vérifié qu'à la connexion).
+- **MISE À JOUR (2026-09-11)** — l'application est déployée en HTTPS
+  (`beta.applicalbum.com`, hébergement Railway) : le transport chiffré n'est
+  donc plus hors périmètre **en production**. Reste en clair en usage local
+  (réseau domestique), cas d'usage secondaire pour les tests.
+
+## B11. Nouveau GD — Partage d'un lien direct (album / morceau)
+
+**Contexte :** implémenté le 2026-09-15, sert `RQ-00077` (partager ses
+évaluations). Sert `RQ-00007` (comparer avec un autre utilisateur) en
+combinaison avec B12 ci-dessous.
+
+**General Description proposée :**
+> Chaque fiche morceau ou album est accessible via une URL stable
+> (`/track/{mbid}`, `/album/{mbid}`), que l'utilisateur peut partager pour
+> qu'un destinataire la consulte et/ou note à son tour.
+
+**Requirements / Business Rules proposées :**
+- `RQ-000XX` — Le système doit permettre de partager un lien direct vers la
+  fiche d'un morceau ou d'un album.
+- `BR-000XX` — Un bouton **« Partager »** sur la fiche ouvre une feuille à
+  **trois options** : **« Partager la fiche »** (lien nu), **« Partager ma
+  note »** (lien + message texte incluant la note du profil courant pour cet
+  élément — inactif si le profil courant n'a pas encore noté), **« Inviter à
+  noter »** (lien + paramètre qui scrolle automatiquement vers la zone de
+  notation à l'arrivée).
+- `BR-000XX` — Le partage utilise le partage natif du système d'exploitation
+  (liste d'applications : messagerie, réseaux sociaux…) quand disponible ;
+  sinon le lien est copié dans le presse-papiers avec confirmation visuelle.
+- `BR-000XX` — Un visiteur **sans profil** cliquant un lien partagé passe
+  d'abord par la création d'un profil léger (pseudo, cf. B10), puis accède
+  automatiquement à la fiche ou zone visée sans étape supplémentaire.
+- `BR-000XX` — Un visiteur **avec un profil existant** accède directement à
+  la fiche ciblée.
+- `BR-000XX` — Le lien donne accès en **lecture** à la fiche ; le visiteur ne
+  peut créer/modifier que **sa propre** notation sous son propre profil —
+  jamais celle du partageur (cf. PP-01, B10).
+- **Hors périmètre confirmé :** fiche artiste non équipée du bouton Partager
+  (le routing `/artist/{mbid}` existe et fonctionne, en réserve) ; pas de
+  routeur SPA complet (l'URL de partage est un point d'entrée à usage
+  unique, pas une adresse tenue à jour pendant la navigation ultérieure) ;
+  pas de tracking/analytics sur les partages ; pas de permissions avancées
+  (public/privé par notation, cf. B6bis).
+
+## B12. Nouveau GD — Consultation en lecture seule de la notation d'un autre profil
+
+**Contexte :** implémenté le 2026-09-15/16. Remplace le comportement
+précédent de la mosaïque d'accueil en mode « Tout le monde » (B6bis) : une
+tuile d'un autre profil ouvrait jusqu'ici la fiche sous le profil courant
+(vide). Sert `RQ-00007` (comparer ses évaluations avec celles d'un autre
+utilisateur).
+
+**General Description proposée :**
+> Depuis la mosaïque d'accueil (mode « Tout le monde »), consulter une
+> notation appartenant à un autre profil affiche cette notation en lecture
+> seule, avec la possibilité explicite de basculer sur sa propre notation
+> pour noter à son tour.
+
+**Requirements / Business Rules proposées :**
+- `RQ-000XX` — Le système doit permettre de consulter la notation d'un autre
+  utilisateur pour un morceau ou un album, sans pouvoir la modifier.
+- `BR-000XX` — Une tuile d'accueil appartenant à un autre profil ouvre sa
+  fiche (morceau ou album) en **lecture seule** : une bannière indique
+  « Notation de {profil} » et toute action d'écriture (sliders, statut
+  Classic, « J'aime ») est verrouillée.
+- `BR-000XX` — Pour un **album**, la consultation s'étend à la **tracklist**
+  complète : chaque morceau affiche la note de ce même profil, pas celle du
+  profil courant.
+- `BR-000XX` — Un bouton **« Noter »** dans la bannière fait basculer la
+  fiche affichée sur la notation du **profil courant** (éditable normalement).
+- `BR-000XX` — La navigation « Précédent »/« Suivant » au sein d'un album
+  consulté reste en consultation du même profil ; noter un morceau au
+  passage ne fait pas sortir le reste de l'album du mode consultation (seule
+  la fiche sur laquelle « Noter » a été tapé bascule).
+- **Hors périmètre confirmé :** tuiles Artiste (pas d'écran de notation
+  éditable équivalent) ; recherche, lien partagé (B11) et « Mes notations »
+  n'entrent jamais en consultation (toujours la notation du profil courant).
 
 ---
 
 # PARTIE C — Points volontairement laissés hors spec (ne pas spécifier maintenant)
 
-- **Badge « noteur » communautaire** sur les tuiles d'accueil (coin
-  haut-droite réservé) — dépend de GD-00001 / `RQ-00006` (référentiel
-  communautaire) et d'une notion de compte.
+- **DEVENU OBSOLÈTE (2026-09-11)** — l'ancien item « Badge "noteur"
+  communautaire sur les tuiles d'accueil, coin haut-droite réservé » est
+  développé : cf. B6bis (pseudo affiché en mode « Tout le monde »).
 - **Comptes utilisateurs / authentification** — les profils légers (B10)
-  séparent les notations par pseudo mais sans authentification. Un vrai
-  système de comptes reste prérequis de `RQ-00006` (agrégation communautaire),
-  `RQ-00007` (comparer avec la communauté / un autre utilisateur), `RQ-00077`
-  (partage).
-- **Notation « au feeling » et « par critères » d'un album / d'un artiste** —
-  la mécanique existe (bloc à 4 notes) mais ces 2 notes sont des placeholders.
-  Les jeux de critères album / artiste restent à définir.
+  séparent les notations par pseudo mais sans authentification. **Nuance
+  (2026-09-15/16) :** `RQ-00007` (comparer avec un autre utilisateur) et
+  `RQ-00077` (partage) sont désormais couverts **sans** vrai système de
+  comptes, via B11 (partage de liens) et B12 (consultation en lecture
+  seule) — reposant sur les profils légers existants. `RQ-00006`
+  (agrégation communautaire au sens fort) reste, elle, hors périmètre.
+- **Notation « au feeling » et « par critères » d'un artiste** — la
+  mécanique existe (bloc à 4 notes) mais ces 2 notes restent des
+  placeholders. **Développées côté album depuis le 2026-09-10** (cf. B5bis).
+  Le jeu de critères artiste reste à définir.
 - **Statut « Classic » album / artiste** — emplacement prévu, non développé.
 - **Carte « NOTATION DE LA COMMUNAUTÉ »** des maquettes `MCK-TRACK-001/002/003`
   — non reprise (nécessite GD-00001).
@@ -535,9 +705,10 @@ dans le TRS, mais expliquent l'état du code.
 
 - **Modèle de données cible** : table `ratings` générique + champ
   `entity_type` (`track`/`album`/`artist`) + table `rating_criteria`
-  clé/valeur. Décision d'architecture actée ; migration non encore faite (le
-  code utilise encore des colonnes de critères fixes, niveau morceau
-  uniquement).
+  clé/valeur. Décision d'architecture actée. **MISE À JOUR (2026-09-10) :**
+  migration faite pour **l'album uniquement** (cf. B5bis) — les critères
+  MORCEAU restent sur leurs colonnes fixes (`crit_performance`…), migration
+  complète toujours repoussée.
 - **Source musicale** : MusicBrainz (API publique anonyme). File d'attente
   interne (1 appel à la fois) pour respecter la limite ~1 req/s ; cache
   mémoire des recherches et des URLs de pochettes.
@@ -547,3 +718,11 @@ dans le TRS, mais expliquent l'état du code.
   gagne).
 - **Arrondi** : standard « à la moitié supérieure » (`CR-00039`, `CR-00060`
   disent « arrondi au dixième » sans préciser la méthode).
+- **Hébergement (2026-09-11)** : déployé sur Railway, `beta.applicalbum.com`,
+  HTTPS. Pas de HTTP Basic Auth globale (décision produit : le système
+  profils légers + rôle admin est jugé suffisant pour une bêta partagée à
+  des amis de confiance). Détails : `HEBERGEMENT.md`.
+- **Profils légers — modèle de confidentialité (2026-09-11)** : aucune
+  notion de public/privé par notation (cf. B6bis) ; toutes les notations de
+  tous les profils sont lisibles par n'importe quel profil via « Tout le
+  monde ». Accepté pour la bêta, pas une cible.
