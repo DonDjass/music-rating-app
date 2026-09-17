@@ -76,20 +76,29 @@ PAR CRITÈRES est alors la moyenne des seuls critères renseignés.
 
 ---
 
-## A2. Suppression d'une note enregistrée — retirée de l'UI
+## A2. Suppression d'une note enregistrée — réintroduite via RÉINITIALISER → ENREGISTRER
 
 **Contexte :** `ST-00033`/`ST-00034` (suppression NOTE AU FEELING) et
 `ST-00057`/`ST-00058` (suppression NOTE PAR CRITÈRES) décrivent une action de
-suppression explicite d'une note déjà enregistrée. À la demande de
-l'utilisateur, cette action a été **retirée de l'interface** (« on n'en a pas
-besoin normalement »). La logique serveur existe encore mais n'est plus
-appelée.
+suppression explicite d'une note déjà enregistrée. Un premier temps, à la
+demande de l'utilisateur, cette action avait été **retirée de l'interface**
+(« on n'en a pas besoin normalement »), sans retirer la logique serveur.
 
-**Décision produit à prendre :** soit (a) aligner le spec en retirant ces 4
-steps et les scénarios `SC-00032` / `SC-00056` associés, soit (b) garder le
-spec et réintroduire la fonctionnalité plus tard. **Recommandation : (a)** —
-la modification d'une note couvre déjà la mise à jour ; la remise à « non
-renseigné » pourra être ré-spécifiée si le besoin réapparaît.
+**MISE À JOUR (2026-09-17) :** défaut signalé — après RÉINITIALISER, le
+bouton ENREGISTRER restait indisponible, empêchant même de sauvegarder un
+changement voulu. Question reposée à l'utilisateur : garder ce blocage
+(cohérent avec le retrait ci-dessus) ou aligner sur le comportement déjà
+existant côté critères album (§A6), où RÉINITIALISER + ENREGISTRER efface la
+note. **Réponse : aligner partout.** ENREGISTRER reste désormais disponible
+après RÉINITIALISER, et l'action efface la note existante (appel des
+endpoints `DELETE` déjà présents côté serveur). Aucun bouton "Supprimer"
+dédié n'est réintroduit — seul le chemin RÉINITIALISER → ENREGISTRER permet
+de vider une note. Cf. `GAPS_ET_DECISIONS.md` (2026-09-17).
+
+**Décision produit à prendre :** aligner `ST-00033`/`ST-00034`/`ST-00057`/
+`ST-00058` et `SC-00032`/`SC-00056` sur ce chemin (RÉINITIALISER +
+ENREGISTRER), plutôt que sur une action "Supprimer" séparée telle que
+décrite actuellement dans ces steps.
 
 **Statut : `À VALIDER` (choix produit)**
 
@@ -174,8 +183,10 @@ recliquer « Calculer P/T/P depuis mes morceaux ». Implémenté ainsi.
   (BUSINESS RULE — Critères partiels) ne s'applique plus au cas où
   l'utilisateur **efface** une NOTE PAR CRITÈRES existante : ENREGISTRER
   après RÉINITIALISER persiste l'état « non renseigné » (équivalent d'une
-  suppression de la NOTE PAR CRITÈRES Album). À arbitrer : faut-il un
-  scénario dédié « Supprimer la NOTE PAR CRITÈRES Album » ?
+  suppression de la NOTE PAR CRITÈRES Album).
+- **TRANCHÉ (2026-09-17) :** pas de scénario "Supprimer" dédié — le chemin
+  RÉINITIALISER → ENREGISTRER en tient lieu, désormais généralisé à toutes
+  les notes (morceau feeling/critères, album feeling/critères). Cf. §A2.
 - **Sans changement :** « ↻ valeur calculée » (retour hérité d'un critère
   précis) et le toggle « Prendre en compte mes notes des morceaux ».
 

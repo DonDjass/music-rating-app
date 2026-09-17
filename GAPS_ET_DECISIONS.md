@@ -7,6 +7,40 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Fix : RÉINITIALISER puis ENREGISTRER bloqué (morceau feeling/critères, album feeling) — 2026-09-17
+
+**Contexte :** défaut signalé par l'utilisateur — sur la fiche morceau,
+cliquer "Réinitialiser" (NOTE AU FEELING ou NOTE PAR CRITÈRES) puis vouloir
+"Enregistrer" laissait le bouton désactivé (`feelingDraft`/`criteriaDraft`
+vide → save bloqué). Question posée à l'utilisateur : est-ce voulu (cf. §A2
+— suppression retirée de l'UI morceau) ou faut-il aligner sur le
+comportement déjà en place pour les critères album (§A6/A6c), où
+RÉINITIALISER + ENREGISTRER efface bien la note existante ?
+
+**Réponse de l'utilisateur : aligner partout — ENREGISTRER doit rester
+disponible après RÉINITIALISER et effacer la note existante.**
+
+**Implémenté (public/app.js) :**
+- NOTE AU FEELING morceau, NOTE PAR CRITÈRES morceau, NOTE AU FEELING album :
+  `saveBtn.disabled` ne bloque plus sur "brouillon vide", seulement sur
+  "brouillon identique à l'état enregistré". Le handler "save" appelle
+  désormais `DELETE /api/tracks/:mbid/feeling|criteria` (resp.
+  `DELETE /api/albums/:mbid/feeling`) quand le brouillon est vide, au lieu de
+  ne rien faire. Ces endpoints DELETE existaient déjà côté serveur mais
+  n'étaient jusqu'ici jamais appelés (cf. §A2 — logique de suppression
+  laissée en place mais non branchée).
+- NOTE PAR CRITÈRES album : déjà correct (PUT avec objet critères vide,
+  géré côté serveur), aucun changement.
+
+**Impact spec :** annule/remplace §A2 pour le morceau — la suppression
+d'une note existante redevient possible via l'UI, mais uniquement via le
+chemin RÉINITIALISER → ENREGISTRER (pas de bouton "Supprimer" dédié). Répond
+aussi à la question ouverte en §A6c (SPEC_UPDATES_PROPOSEES.md) : pas besoin
+d'un scénario dédié "Supprimer la NOTE PAR CRITÈRES album", le chemin
+RÉINITIALISER → ENREGISTRER en tient lieu, partout (morceau et album).
+
+---
+
 ## Consultation en lecture seule depuis la mosaïque d'accueil — demande explicite 2026-09-15
 
 Contexte : en mode "Tout le monde", une tuile d'accueil peut appartenir à un

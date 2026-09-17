@@ -665,7 +665,9 @@ function renderFeeling() {
     const resetBtn = feelingActions.querySelector('[data-action="reset"]');
     const saveBtn = feelingActions.querySelector('[data-action="save"]');
     resetBtn.disabled = feelingDraft == null;
-    saveBtn.disabled = feelingDraft == null || feelingDraft === track.feeling;
+    // Un RÉINITIALISER suivi d'ENREGISTRER doit rester possible : ça efface
+    // la note existante (même patron que les critères album, cf. GAPS).
+    saveBtn.disabled = feelingDraft === track.feeling;
   }
 }
 
@@ -723,9 +725,10 @@ function renderCriteria() {
 
     const resetBtn = criteriaActions.querySelector('[data-action="reset"]');
     const saveBtn = criteriaActions.querySelector('[data-action="save"]');
-    const hasAnyValue = criteriaHasAnyValue(criteriaDraft);
-    resetBtn.disabled = !hasAnyValue;
-    saveBtn.disabled = !hasAnyValue || criteriaEquals(criteriaDraft, track.criteria);
+    resetBtn.disabled = !criteriaHasAnyValue(criteriaDraft);
+    // Un RÉINITIALISER suivi d'ENREGISTRER doit rester possible : ça efface
+    // la note existante (même patron que les critères album, cf. GAPS).
+    saveBtn.disabled = criteriaEquals(criteriaDraft, track.criteria);
   }
 
   criteriaValueEl.textContent = formatNum(liveCriteriaRating);
@@ -775,8 +778,11 @@ feelingActions.addEventListener("click", async (e) => {
     feelingDraft = null;
     closeFeelingEdit();
   } else if (action === "save") {
-    if (feelingDraft == null) return;
-    track = await api(trackApiPath("/feeling"), "PUT", { value: feelingDraft });
+    if (feelingDraft == null) {
+      track = await api(trackApiPath("/feeling"), "DELETE");
+    } else {
+      track = await api(trackApiPath("/feeling"), "PUT", { value: feelingDraft });
+    }
     closeFeelingEdit();
     render();
   }
@@ -829,9 +835,12 @@ criteriaActions.addEventListener("click", async (e) => {
     criteriaDraft = { performance: null, texte: null, production: null };
     closeCriteriaEdit();
   } else if (action === "save") {
-    const { performance, texte, production } = criteriaDraft;
-    if (!criteriaHasAnyValue(criteriaDraft)) return;
-    track = await api(trackApiPath("/criteria"), "PUT", { performance, texte, production });
+    if (!criteriaHasAnyValue(criteriaDraft)) {
+      track = await api(trackApiPath("/criteria"), "DELETE");
+    } else {
+      const { performance, texte, production } = criteriaDraft;
+      track = await api(trackApiPath("/criteria"), "PUT", { performance, texte, production });
+    }
     closeCriteriaEdit();
     render();
   }
@@ -1949,7 +1958,9 @@ function renderAlbumFeeling() {
       albumFeelingDraft.value === saved &&
       (albumFeelingDraft.value == null || albumFeelingDraft.manual === savedManual);
     resetBtn.disabled = albumFeelingDraft.value == null;
-    saveBtn.disabled = albumFeelingDraft.value == null || unchanged;
+    // Un RÉINITIALISER suivi d'ENREGISTRER doit rester possible : ça efface
+    // la note existante (même patron que les critères album, cf. A6/A7).
+    saveBtn.disabled = unchanged;
   }
 
   // "↺ valeur calculée" : valeur héritée ajustée à la main, et une moyenne
@@ -2049,14 +2060,17 @@ albumFeelingActions.addEventListener("click", async (e) => {
   } else if (action === "cancel") {
     closeAlbumFeelingEdit();
   } else if (action === "save") {
-    if (albumFeelingDraft.value == null) return;
     try {
-      albumNotation = await api(`${albumApiBase()}/feeling`, "PUT", {
-        value: albumFeelingDraft.value,
-        manual: albumFeelingDraft.manual,
-        total: albumTotalCount(),
-        meta: albumSaveMeta(),
-      });
+      if (albumFeelingDraft.value == null) {
+        albumNotation = await api(`${albumApiBase()}/feeling`, "DELETE");
+      } else {
+        albumNotation = await api(`${albumApiBase()}/feeling`, "PUT", {
+          value: albumFeelingDraft.value,
+          manual: albumFeelingDraft.manual,
+          total: albumTotalCount(),
+          meta: albumSaveMeta(),
+        });
+      }
       albumEditing = null;
       renderAlbumNotation();
     } catch (err) {
