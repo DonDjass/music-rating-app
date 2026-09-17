@@ -534,7 +534,7 @@ function togglePreview() {
 // Fiche morceau : câble le bouton « Écouter » (deep link, via
 // wireDeezerButton) ET le bouton « Extrait » (lecture in-page) à partir du
 // même appel /api/deezer-link, sous la même garde anti-réponse-périmée.
-function wireTrackDeezer(mbid, title, artist) {
+function wireTrackDeezer(mbid, title, artist, durationMs) {
   stopPreview();
   trackPreviewBtn.classList.remove("dz-ready", "dz-none", "is-playing");
   trackPreviewBtn.onclick = null;
@@ -543,7 +543,7 @@ function wireTrackDeezer(mbid, title, artist) {
 
   return wireDeezerButton(
     trackPlayBtn,
-    { type: "track", mbid, title, artist },
+    { type: "track", mbid, title, artist, durationMs },
     "▶ Écouter",
     ({ preview, transient }) => {
       if (preview) {
@@ -2612,7 +2612,7 @@ async function loadTrack(mbid, meta = {}, context = null, viewProfile = null) {
     artist: track.artist || "",
     album: track.albumTitle || "",
   });
-  wireTrackDeezer(track.mbid, track.title, track.artist);
+  wireTrackDeezer(track.mbid, track.title, track.artist, track.durationMs);
 }
 
 async function selectTrack(result, context = null) {

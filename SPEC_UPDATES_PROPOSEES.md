@@ -567,6 +567,18 @@ absent de la maquette).
   (transitoire, rafraîchie à la demande) est utilisée ; rien n'est stocké
   durablement au-delà de cette URL et de l'identifiant. Grisé si le morceau
   n'a pas d'extrait. Non prévu pour album/artiste (Deezer n'en fournit pas).
+- `BR-000XX` — **Vérification du matching (2026-09-17, corrige un défaut) :**
+  avant de retenir une correspondance Deezer pour un morceau ou un album,
+  le système vérifie que l'artiste retourné correspond à l'artiste
+  MusicBrainz (tolérance casse/accents/ponctuation et légère variante
+  orthographique ; rejet si l'artiste ne correspond clairement pas) et, pour
+  un morceau, que sa durée est cohérente avec celle de MusicBrainz
+  (tolérance de quelques secondes — filtre les versions live/remix/radio
+  edit). Si plusieurs résultats passent ces filtres, le plus proche par
+  titre est retenu. Si aucun résultat ne passe les filtres, aucune
+  correspondance n'est mémorisée (bouton « Non trouvé sur Deezer » / extrait
+  indisponible) — un extrait absent est jugé préférable à un extrait faux.
+  Contexte et implémentation détaillés : `GAPS_ET_DECISIONS.md` (2026-09-17).
 
 ## B10. Profils légers (multi-utilisateurs sans authentification)
 

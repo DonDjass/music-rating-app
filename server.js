@@ -567,6 +567,7 @@ function serializeRow(row) {
     artist: row.artist,
     albumTitle: row.album,
     tags: tagsParts.length ? tagsParts.join(" • ") : "—",
+    durationMs: row.duration_ms,
     feeling: row.feeling_rating,
     criteria: {
       performance: row.crit_performance,
@@ -1029,37 +1030,139 @@ function previewExpired(url) {
   return m ? Number(m[1]) * 1000 < Date.now() + 30000 : false;
 }
 
-// Renvoie { id, preview } (id string ou null si aucune correspondance ;
+// --- Normalisation & similarité de chaînes (vérification du matching Deezer) ---
+// Cf. GAPS_ET_DECISIONS.md (2026-09-17) : la recherche plein-texte Deezer
+// prenait le 1er résultat sans jamais vérifier l'artiste ni la durée, ce qui
+// a produit des associations complètement fausses (ex. un morceau de Lino
+// associé à un morceau de Cesária Évora).
+
+function stripDiacritics(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeForMatch(s) {
+  return stripDiacritics(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// Distance de Levenshtein (chaînes courtes : titres/noms d'artiste).
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+// Score de similarité 0..1 (1 = identique) entre deux chaînes déjà normalisées.
+function similarity(a, b) {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+}
+
+// L'artiste renvoyé par Deezer "correspond" à l'artiste MusicBrainz si, une
+// fois normalisés (minuscules, sans accents/ponctuation), l'un contient
+// l'autre (tolère "The Beatles" vs "Beatles", "Lino feat. X" vs "Lino") ou si
+// leur similarité reste élevée (tolère une variante orthographique mineure).
+// Un artiste sans rapport (ex. Cesária Évora vs Lino) est rejeté.
+const ARTIST_MATCH_THRESHOLD = 0.72;
+function artistMatches(mbArtist, dzArtist) {
+  const a = normalizeForMatch(mbArtist);
+  const b = normalizeForMatch(dzArtist);
+  if (!a || !b) return true; // rien à comparer : ne bloque pas le résultat
+  if (a === b) return true;
+  if (a.length >= 3 && b.length >= 3 && (a.includes(b) || b.includes(a))) return true;
+  return similarity(a, b) >= ARTIST_MATCH_THRESHOLD;
+}
+
+// Tolérance de durée (morceaux uniquement, en ms) : filtre notamment les
+// versions live / remix / radio edit qui partagent le même titre+artiste.
+const DURATION_TOLERANCE_MS = 7000;
+function durationMatches(mbDurationMs, dzDurationSec) {
+  if (!mbDurationMs || dzDurationSec == null) return true; // donnée absente : ne bloque pas
+  return Math.abs(mbDurationMs - dzDurationSec * 1000) <= DURATION_TOLERANCE_MS;
+}
+
+// Renvoie { id, preview } (id string ou null si aucune correspondance fiable ;
 // preview = URL de l'extrait 30 s ou "" si le morceau n'en a pas, morceau
 // uniquement), ou `undefined` si la recherche a échoué (→ ne pas mémoriser).
-// La recherche plein-texte de Deezer classe le meilleur résultat en premier
-// (les filtres `field:"value"` se sont montrés peu fiables ici).
-async function searchDeezer(type, title, artist) {
+//
+// Récupère jusqu'à 5 candidats Deezer, écarte ceux dont l'artiste ne
+// correspond pas (et, pour un morceau, dont la durée diffère trop — filtre
+// les versions live/remix), puis retient parmi les survivants celui dont le
+// titre est le plus proche du titre recherché. Si aucun candidat ne passe
+// les filtres, pas de correspondance plutôt qu'un résultat faux (un extrait
+// absent est moins gênant qu'un extrait faux).
+async function searchDeezer(type, title, artist, durationMs) {
   const seg = DEEZER_SEG[type];
   if (!seg) return undefined;
 
   const t = dzQuote(title);
   const a = dzQuote(artist);
 
-  const queries =
-    type === "artist" ? [a] : [`${t} ${a}`.trim(), t];
+  if (type === "artist") {
+    // Recherche d'un artiste : pas de filtre identité/durée applicable ici
+    // (c'est justement l'identité qu'on cherche) — comportement inchangé.
+    if (!a) return undefined;
+    const r = await safeFetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(a)}&limit=1`);
+    if (!r || !r.ok) return undefined;
+    try {
+      const hit = (await r.json())?.data?.[0];
+      return hit && hit.id != null ? { id: String(hit.id), preview: null } : { id: null, preview: null };
+    } catch {
+      return { id: null, preview: null };
+    }
+  }
+
+  const queries = [`${t} ${a}`.trim(), t].filter(Boolean);
+  const normTitle = normalizeForMatch(title);
 
   let anySucceeded = false;
   for (const q of queries) {
-    if (!q) continue;
     const r = await safeFetch(
-      `https://api.deezer.com/search/${seg}?q=${encodeURIComponent(q)}&limit=1`
+      `https://api.deezer.com/search/${seg}?q=${encodeURIComponent(q)}&limit=5`
     );
     if (!r || !r.ok) continue;
     anySucceeded = true;
+
+    let hits;
     try {
-      const hit = (await r.json())?.data?.[0];
-      if (hit && hit.id != null) {
-        return { id: String(hit.id), preview: type === "track" ? hit.preview || "" : null };
-      }
+      hits = (await r.json())?.data || [];
     } catch {
-      /* réponse inexploitable */
+      continue;
     }
+
+    const candidates = hits.filter((hit) => {
+      if (hit.id == null) return false;
+      if (a && !artistMatches(artist, hit.artist?.name)) return false;
+      if (type === "track" && !durationMatches(durationMs, hit.duration)) return false;
+      return true;
+    });
+    if (candidates.length === 0) continue;
+
+    // Meilleur candidat = titre le plus proche (tri stable : à égalité, on
+    // garde l'ordre de pertinence déjà donné par Deezer).
+    let best = candidates[0];
+    let bestScore = similarity(normTitle, normalizeForMatch(best.title));
+    for (const c of candidates.slice(1)) {
+      const score = similarity(normTitle, normalizeForMatch(c.title));
+      if (score > bestScore) {
+        best = c;
+        bestScore = score;
+      }
+    }
+    return { id: String(best.id), preview: type === "track" ? best.preview || "" : null };
   }
   return anySucceeded ? { id: null, preview: null } : undefined;
 }
@@ -1115,6 +1218,7 @@ async function handleDeezerLink(params, res) {
   }
   const title = params.get("title") || "";
   const artist = params.get("artist") || "";
+  const durationMs = params.get("durationMs") ? Number(params.get("durationMs")) : null;
 
   // N'importe quelle ligne de ce mbid porte le cache Deezer (voir
   // cacheDeezerResult) : on prend en priorité une ligne déjà résolue.
@@ -1147,7 +1251,7 @@ async function handleDeezerLink(params, res) {
     });
   }
 
-  const result = await searchDeezer(type, title, artist);
+  const result = await searchDeezer(type, title, artist, durationMs);
   if (result === undefined) {
     // Recherche indisponible : on ne mémorise rien, le client réessaiera.
     return sendJson(res, 200, { id: null, url: null, preview: null, transient: true });
@@ -1158,6 +1262,38 @@ async function handleDeezerLink(params, res) {
     url: deezerUrl(type, result.id),
     preview: result.preview ? result.preview : null,
   });
+}
+
+// Admin : force un re-matching Deezer (id + extrait) pour un album, un
+// artiste ou l'intégralité du cache — cf. GAPS_ET_DECISIONS.md (2026-09-17,
+// correctif du matching Deezer, ex. "Radio bitume"/"Get Rich or Die Tryin'"
+// mal matchés). Vide juste le cache existant ; le prochain affichage du
+// bouton "Écouter"/"Extrait" relance une recherche, avec les filtres
+// artiste/durée désormais en place dans searchDeezer().
+function handleDeezerRefresh(body, res) {
+  const clearSql = `UPDATE ratings SET deezer_id = NULL, deezer_preview_url = NULL, deezer_checked = 0`;
+  let info;
+  if (body.all === true) {
+    info = db.prepare(`${clearSql} WHERE deezer_checked = 1`).run();
+  } else if (typeof body.releaseMbid === "string" && body.releaseMbid.trim()) {
+    const releaseMbid = body.releaseMbid.trim();
+    // L'album lui-même (mbid = releaseMbid) et tous ses morceaux
+    // (release_mbid = releaseMbid), tous profils confondus (le cache Deezer
+    // n'est pas propre à un profil, cf. cacheDeezerResult).
+    info = db
+      .prepare(`${clearSql} WHERE deezer_checked = 1 AND (mbid = ? OR release_mbid = ?)`)
+      .run(releaseMbid, releaseMbid);
+  } else if (typeof body.artist === "string" && body.artist.trim()) {
+    // Correspondance texte insensible à la casse (aucun artist_mbid stocké
+    // sur `ratings` aujourd'hui — cohérent avec le reste du matching Deezer,
+    // déjà basé sur le nom texte plutôt qu'un identifiant stable).
+    info = db
+      .prepare(`${clearSql} WHERE deezer_checked = 1 AND LOWER(artist) = LOWER(?)`)
+      .run(body.artist.trim());
+  } else {
+    return sendJson(res, 400, { error: "Précise releaseMbid, artist, ou all:true." });
+  }
+  sendJson(res, 200, { ok: true, cleared: info.changes });
 }
 
 // Historique des recherches : on enregistre la requête (dé-doublonnée et
@@ -1752,6 +1888,7 @@ const server = http.createServer(async (req, res) => {
       "/api/admin/db-status",
       "/api/admin/db-restore",
       "/api/admin/profile-pin-reset",
+      "/api/admin/deezer-refresh",
       "/api/profile/claim",
       "/api/cover",
       "/api/deezer-link",
@@ -1833,6 +1970,17 @@ const server = http.createServer(async (req, res) => {
       if (!target) return sendJson(res, 400, { error: "Pseudo manquant." });
       const info = db.prepare(`DELETE FROM profile_pins WHERE profile = ?`).run(target);
       return sendJson(res, 200, { ok: true, reset: info.changes > 0 });
+    }
+
+    // Force un re-matching Deezer (cf. handleDeezerRefresh) — body :
+    // { releaseMbid } (un album précis) | { artist } (toutes ses entrées) |
+    // { all: true } (tout le cache). Réservé à l'admin.
+    if (pathname === "/api/admin/deezer-refresh" && req.method === "POST") {
+      if (!isAdminRequest(req)) {
+        return sendJson(res, 403, { error: "Réservé à l'administrateur." });
+      }
+      const body = await readBody(req);
+      return handleDeezerRefresh(body || {}, res);
     }
 
     if (pathname === "/api/admin/check" && req.method === "GET") {

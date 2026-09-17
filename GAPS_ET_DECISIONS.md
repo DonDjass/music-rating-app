@@ -7,6 +7,97 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Fix : matching Deezer incorrect (artiste/durée jamais vérifiés) — 2026-09-17
+
+**Contexte :** défaut signalé — des extraits/liens Deezer associés à un
+morceau ne correspondaient pas au bon contenu. Deux cas concrets vérifiés en
+prod avant correction :
+- *Radio bitume* (Lino) : le morceau « Césarienne » était mappé vers
+  « Linda Mimosa » de **Cesária Évora** (aucun rapport d'artiste ni de genre).
+- *Get Rich or Die Tryin'* (50 Cent) : « In da Club » ET « Many Men (Wish
+  Death) » — deux morceaux différents — étaient tous les deux mappés vers le
+  **même** mashup bootleg (« Stayin Alive x In Da Club (Mashup) » par un
+  artiste "Antifarox").
+
+**Diagnostic (cause racine) :** `searchDeezer()` (`server.js`) faisait une
+recherche plein-texte Deezer `limit=1` et prenait le premier résultat sans
+jamais vérifier que l'artiste retourné correspondait à l'artiste
+MusicBrainz, ni comparer la durée. Le matching est fait **par morceau**
+(chaque mbid interroge Deezer indépendamment — pas de contamination
+"un mauvais ID album casse toute la tracklist", les deux morceaux 50 Cent
+ci-dessus ont échoué chacun de leur côté). Le résultat, une fois faux, reste
+en cache indéfiniment (`deezer_checked = 1`), aucune réévaluation automatique.
+
+**Correctif implémenté (`server.js`) :**
+- `searchDeezer(type, title, artist, durationMs)` récupère désormais jusqu'à
+  5 candidats (`limit=5`) au lieu d'1, et les filtre :
+  - **Identité d'artiste** (`artistMatches`) : noms normalisés (minuscules,
+    sans accents/ponctuation via `normalizeForMatch`/`stripDiacritics`),
+    acceptés si égaux, si l'un contient l'autre (« Lino feat. X » ≈ « Lino »),
+    ou si leur similarité (Levenshtein normalisé) ≥ **0,72**. En dessous,
+    rejeté (ex. Cesária Évora vs Lino ≈ 0,2).
+  - **Durée** (morceaux uniquement, `durationMatches`) : tolérance **± 7 s**
+    entre `duration_ms` (MusicBrainz) et `hit.duration` (Deezer) — filtre les
+    versions live/remix/radio edit qui partagent titre+artiste.
+  - Parmi les candidats qui passent ces deux filtres, le **plus proche par
+    titre** (même score de similarité) est retenu, pas juste le premier de
+    Deezer.
+  - Si **aucun** candidat ne passe : pas de correspondance mémorisée (`id:
+    null`) plutôt qu'un résultat faux — le bouton affiche « Non trouvé sur
+    Deezer » / l'extrait reste indisponible. Décision produit du prompt de
+    départ : un extrait manquant est moins gênant qu'un extrait faux.
+  - Recherche par **artiste** (photo d'artiste, bouton Écouter fiche
+    artiste) : comportement inchangé, aucun filtre applicable (c'est
+    justement l'identité qu'on cherche).
+- **Durée transmise au filtre** : `duration_ms` était déjà stocké en base
+  mais jamais exposé au client. Ajouté à `serializeRow()` (`durationMs`) ;
+  le client (`wireTrackDeezer`, fiche morceau) le transmet désormais à
+  `/api/deezer-link?...&durationMs=...`. Absent (morceau créé avant ce
+  correctif sans durée connue) → le filtre durée est simplement ignoré,
+  seul le filtre artiste s'applique.
+- Testé en local avec les 3 morceaux ci-dessus après le correctif :
+  « Césarienne » → aucune correspondance retenue (le seul résultat Deezer
+  existant pour cette requête reste Cesária Évora — correctement rejeté) ;
+  « In da Club » et « Many Men » → deux IDs Deezer différents, tous deux
+  vérifiés manuellement comme corrects (bon titre, bon artiste "50 Cent",
+  bon album, durée cohérente à quelques secondes près).
+
+**Étape 3 — refresh des données déjà en base :** nouvel endpoint admin
+`POST /api/admin/deezer-refresh` (jeton admin requis, `X-Admin-Token`) :
+- `{ "releaseMbid": "<mbid de l'album>" }` — vide le cache Deezer de l'album
+  lui-même et de tous ses morceaux (tous profils confondus, le cache Deezer
+  n'est pas propre à un profil).
+- `{ "artist": "Lino" }` — vide le cache de toutes les lignes dont
+  `artist` correspond (insensible à la casse). Basé sur le nom texte, pas un
+  identifiant MusicBrainz stable (`ratings` ne stocke pas d'`artist_mbid`
+  aujourd'hui — cohérent avec le reste du matching Deezer, déjà basé sur le
+  nom).
+- `{ "all": true }` — vide tout le cache Deezer (tous morceaux/albums/artistes
+  déjà résolus).
+
+Ça ne fait que réinitialiser `deezer_id`/`deezer_preview_url`/
+`deezer_checked` à vide — la vraie ré-résolution se fait paresseusement, au
+prochain affichage du bouton « Écouter »/« Extrait » sur le morceau/album
+concerné (via `/api/deezer-link`, qui applique désormais les filtres
+ci-dessus). Pas de scan de masse ni d'appel Deezer synchrone déclenché par
+l'endpoint lui-même.
+
+Exemple d'usage (mot de passe admin déjà échangé contre un jeton via
+`/api/admin/login`) :
+```
+curl -X POST https://beta.applicalbum.com/api/admin/deezer-refresh \
+  -H "X-Admin-Token: <jeton>" -H "Content-Type: application/json" \
+  -d '{"releaseMbid":"77b35a36-a781-4101-b17f-e741f67d3a96"}'
+```
+
+**Si le problème resurgit sur un autre album :** relancer un refresh ciblé
+(`releaseMbid` ou `artist`) suffit — pas besoin de redéployer. Si le
+problème est plus large (beaucoup d'albums touchés, ou évolution des seuils
+de tolérance), `all:true` puis ajuster `ARTIST_MATCH_THRESHOLD` /
+`DURATION_TOLERANCE_MS` dans `server.js`.
+
+---
+
 ## Fix : RÉINITIALISER puis ENREGISTRER bloqué (morceau feeling/critères, album feeling) — 2026-09-17
 
 **Contexte :** défaut signalé par l'utilisateur — sur la fiche morceau,
