@@ -457,6 +457,37 @@ const albumPlayBtn = el("album-play-btn");
 const artistPlayBtn = el("artist-play-btn");
 const trackPreviewBtn = el("track-preview-btn");
 const previewAudio = el("track-preview-audio");
+const trackDeezerRefreshBtn = el("track-deezer-refresh-btn");
+const albumDeezerRefreshBtn = el("album-deezer-refresh-btn");
+
+// Admin uniquement : vide le cache Deezer (id + extrait) d'un mbid précis
+// puis relance immédiatement une résolution fraîche (avec les filtres
+// artiste/durée de searchDeezer côté serveur), cf. GAPS_ET_DECISIONS.md
+// (2026-09-17, correctif du matching Deezer).
+async function adminDeezerRefresh(params) {
+  try {
+    const r = await api("/api/admin/deezer-refresh", "POST", params);
+    showToast(r.cleared ? "Cache Deezer vidé, nouvelle recherche…" : "Rien à vider pour cet élément.");
+  } catch {
+    showToast("Impossible de vider le cache. Réessaie.");
+  }
+}
+
+trackDeezerRefreshBtn.addEventListener("click", async () => {
+  if (!track || !track.mbid) return;
+  await adminDeezerRefresh({ mbid: track.mbid });
+  wireTrackDeezer(track.mbid, track.title, track.artist, track.durationMs);
+});
+
+albumDeezerRefreshBtn.addEventListener("click", async () => {
+  if (!currentAlbum || !currentAlbum.mbid) return;
+  await adminDeezerRefresh({ releaseMbid: currentAlbum.mbid });
+  wireDeezerButton(
+    albumPlayBtn,
+    { type: "album", mbid: currentAlbum.mbid, title: currentAlbum.title, artist: currentAlbum.artist },
+    "▶ Écouter"
+  );
+});
 
 function deezerQs(params) {
   return new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
@@ -618,6 +649,7 @@ trackViewingRateBtn.addEventListener("click", () => {
 
 function render() {
   renderTrackViewingBanner();
+  trackDeezerRefreshBtn.hidden = !adminToken;
   trackTitleEl.textContent = track.title;
   trackArtistEl.textContent = track.artist;
   trackAlbumEl.textContent = track.albumTitle;
@@ -2376,6 +2408,7 @@ async function openAlbum(album, viewProfile = null) {
       { type: "album", mbid: currentAlbum.mbid, title: currentAlbum.title, artist: artistName },
       "▶ Écouter"
     );
+    albumDeezerRefreshBtn.hidden = !adminToken;
 
     drilldownResults.innerHTML = "";
     if (tracks.length === 0) {
@@ -2827,6 +2860,10 @@ const adminSwitchBtn = el("admin-switch-btn");
 const logoutBtn = el("logout-btn");
 const settingsHintNormal = el("settings-hint-normal");
 const settingsHintAdmin = el("settings-hint-admin");
+const adminDeezerTools = el("admin-deezer-tools");
+const adminDeezerArtistInput = el("admin-deezer-artist-input");
+const adminDeezerArtistBtn = el("admin-deezer-artist-btn");
+const adminDeezerAllBtn = el("admin-deezer-all-btn");
 
 function showGateMode(mode) {
   gateNormal.hidden = mode !== "normal";
@@ -2942,7 +2979,25 @@ function refreshProfileUI() {
   if (adminSwitchEl) adminSwitchEl.hidden = !isAdmin;
   if (settingsHintNormal) settingsHintNormal.hidden = isAdmin;
   if (settingsHintAdmin) settingsHintAdmin.hidden = !isAdmin;
+  if (adminDeezerTools) adminDeezerTools.hidden = !isAdmin;
 }
+
+adminDeezerArtistBtn.addEventListener("click", async () => {
+  const artist = adminDeezerArtistInput.value.trim();
+  if (!artist) return;
+  await adminDeezerRefresh({ artist });
+  adminDeezerArtistInput.value = "";
+});
+adminDeezerArtistInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") adminDeezerArtistBtn.click();
+});
+
+adminDeezerAllBtn.addEventListener("click", async () => {
+  if (!confirm("Vider tout le cache Deezer (morceaux, albums, artistes) ? Chaque fiche revisitée relancera une recherche.")) {
+    return;
+  }
+  await adminDeezerRefresh({ all: true });
+});
 
 adminSwitchBtn.addEventListener("click", () => {
   const val = normalizeProfile(adminSwitchInput.value);

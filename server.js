@@ -1264,17 +1264,22 @@ async function handleDeezerLink(params, res) {
   });
 }
 
-// Admin : force un re-matching Deezer (id + extrait) pour un album, un
-// artiste ou l'intégralité du cache — cf. GAPS_ET_DECISIONS.md (2026-09-17,
-// correctif du matching Deezer, ex. "Radio bitume"/"Get Rich or Die Tryin'"
-// mal matchés). Vide juste le cache existant ; le prochain affichage du
-// bouton "Écouter"/"Extrait" relance une recherche, avec les filtres
-// artiste/durée désormais en place dans searchDeezer().
+// Admin : force un re-matching Deezer (id + extrait) pour un morceau/album
+// précis, un album entier, un artiste ou l'intégralité du cache — cf.
+// GAPS_ET_DECISIONS.md (2026-09-17, correctif du matching Deezer, ex.
+// "Radio bitume"/"Get Rich or Die Tryin'" mal matchés). Vide juste le cache
+// existant ; le prochain affichage du bouton "Écouter"/"Extrait" relance une
+// recherche, avec les filtres artiste/durée désormais en place dans
+// searchDeezer().
 function handleDeezerRefresh(body, res) {
   const clearSql = `UPDATE ratings SET deezer_id = NULL, deezer_preview_url = NULL, deezer_checked = 0`;
   let info;
   if (body.all === true) {
     info = db.prepare(`${clearSql} WHERE deezer_checked = 1`).run();
+  } else if (typeof body.mbid === "string" && body.mbid.trim()) {
+    // Un seul morceau/album précis (bouton ↻ sur sa fiche) — ne touche pas
+    // le reste de l'album.
+    info = db.prepare(`${clearSql} WHERE deezer_checked = 1 AND mbid = ?`).run(body.mbid.trim());
   } else if (typeof body.releaseMbid === "string" && body.releaseMbid.trim()) {
     const releaseMbid = body.releaseMbid.trim();
     // L'album lui-même (mbid = releaseMbid) et tous ses morceaux
@@ -1973,8 +1978,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Force un re-matching Deezer (cf. handleDeezerRefresh) — body :
-    // { releaseMbid } (un album précis) | { artist } (toutes ses entrées) |
-    // { all: true } (tout le cache). Réservé à l'admin.
+    // { mbid } (un morceau/album précis) | { releaseMbid } (un album entier) |
+    // { artist } (toutes ses entrées) | { all: true } (tout le cache).
+    // Réservé à l'admin.
     if (pathname === "/api/admin/deezer-refresh" && req.method === "POST") {
       if (!isAdminRequest(req)) {
         return sendJson(res, 403, { error: "Réservé à l'administrateur." });

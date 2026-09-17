@@ -96,6 +96,45 @@ problème est plus large (beaucoup d'albums touchés, ou évolution des seuils
 de tolérance), `all:true` puis ajuster `ARTIST_MATCH_THRESHOLD` /
 `DURATION_TOLERANCE_MS` dans `server.js`.
 
+**MISE À JOUR (2026-09-17) — UI admin pour le refresh, pas besoin de `curl` :**
+- Sur la fiche **morceau** et la fiche **album**, un bouton **↻** apparaît à
+  côté de « Écouter » **uniquement en mode administrateur** (`adminToken`
+  posé) : vide le cache Deezer de cet élément précis (`{ mbid }` pour le
+  morceau, `{ releaseMbid }` pour l'album — couvre l'album lui-même + tous
+  ses morceaux) puis relance immédiatement une résolution fraîche sans
+  recharger la page.
+- Dans **Réglages** (visible admin uniquement) : bloc « Outils admin — cache
+  Deezer » avec un champ **artiste** (vide toutes les entrées de cet artiste
+  exact, insensible à la casse) et un bouton **Tout vider** (confirmation
+  requise, correspond à `{ all: true }`).
+- L'endpoint accepte désormais aussi `{ mbid }` (un seul morceau/album,
+  sans toucher au reste de l'album) en plus de `releaseMbid`/`artist`/`all`.
+
+**Troisième album cassé identifié en cours de route : *Première classe,
+volume 1. Les Sessions* — cause différente, pas encore corrigée.** C'est
+une compilation MusicBrainz créditée **« Various Artists »** au niveau
+album. `getReleaseTracks()` (`server.js`) récupère l'artiste **une seule
+fois au niveau release** (`data["artist-credit"][0].name`) et l'applique
+identique à **tous les morceaux** de la tracklist, au lieu de l'artiste
+propre à chaque enregistrement (chaque titre a en réalité un interprète
+différent). Donc en base, chaque morceau de cet album est enregistré avec
+l'artiste **« Various Artists »**, ce qui est faux dès la source — pas
+seulement pour Deezer (ça affecte aussi l'affichage tracklist, la recherche
+de morceau, etc.).
+- **Conséquence pour le correctif Deezer ci-dessus :** un refresh sur cet
+  album ne retrouvera **jamais** le bon extrait avec le filtre artiste
+  actuel (« Various Artists » ne correspondra jamais à l'interprète réel
+  renvoyé par Deezer) — au mieux « extrait indisponible » partout sur cet
+  album, ce qui est déjà mieux que le faux extrait actuel, mais pas une
+  vraie correction.
+- **Décision (2026-09-17) :** corriger uniquement le matching Deezer
+  maintenant (refresh ciblé sur les 3 albums déjà identifiés) ; le vrai fix
+  — récupérer l'artiste **par morceau** via MusicBrainz (`inc=artist-credits`
+  sur `/release/{mbid}`, lire `t["artist-credit"]` ou
+  `t.recording["artist-credit"]` au lieu de l'artiste release) — est laissé
+  **hors périmètre pour l'instant**, à traiter séparément si d'autres
+  compilations "Various Artists" posent problème.
+
 ---
 
 ## Fix : RÉINITIALISER puis ENREGISTRER bloqué (morceau feeling/critères, album feeling) — 2026-09-17
