@@ -7,6 +7,52 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Limite externe : le catalogue de recherche Deezer varie selon la localisation du serveur — 2026-09-17
+
+**Contexte :** après le correctif de matching (section suivante), l'utilisateur
+a signalé que « What Up Gangsta » et « Patiently Waiting » (50 Cent,
+*Get Rich or Die Tryin'*) restaient en « Non trouvé sur Deezer » même après
+un refresh, alors que le morceau existe bel et bien sur Deezer.
+
+**Diagnostic :** un endpoint de debug temporaire (retiré depuis) a permis de
+comparer les résultats Deezer **bruts** vus depuis le serveur de prod
+(Railway) vs. depuis un poste local, pour la même requête `q=titre+artiste` :
+
+| Requête | Depuis Railway (prod) | Depuis un poste local |
+|---|---|---|
+| `Patiently Waiting 50 Cent` | 5 résultats, bon morceau **absent** | 6 résultats, bon morceau en tête |
+| `Candy Shop 50 Cent` | 14 résultats, bon morceau **absent** | 18 résultats, bon morceau présent |
+| `In da Club 50 Cent` | bon morceau présent ✅ | bon morceau présent ✅ |
+
+Le morceau existe et est disponible dans ~196 pays selon sa propre fiche
+Deezer (`available_countries`) — ce n'est donc pas une restriction de
+lecture/streaming. C'est la **recherche** Deezer elle-même qui renvoie un
+jeu de résultats différent selon l'IP/la localisation apparente de
+l'appelant, de façon incohérente d'un morceau à l'autre (même artiste, même
+album : certains titres passent, d'autres non). Aucun paramètre d'API connu
+ne permet de forcer une région de recherche.
+
+**Conclusion : ce n'est pas un bug côté appli.** Le comportement actuel
+(aucune correspondance mémorisée, « Non trouvé sur Deezer » affiché) est le
+comportement **voulu** dans ce cas — Deezer ne propose tout simplement pas
+ce résultat à ce serveur, donc pas de faux extrait mais pas de bon non plus.
+Aucun correctif de code ne peut changer ça.
+
+**Décision (2026-09-17) :** pas d'action pour l'instant — accepté comme
+limite externe connue, occurrence probablement rare (observée sur 2-3
+morceaux d'un seul album jusqu'ici). Option envisagée et **explicitement
+refusée pour l'instant** par l'utilisateur : un override manuel admin (coller
+l'ID/lien Deezer trouvé à la main pour un morceau précis, bypass complet de
+la recherche) — à reconsidérer si le cas se reproduit plus largement.
+
+**Si ça resurgit** : le plus rapide pour re-diagnostiquer est de comparer les
+résultats bruts Deezer (`https://api.deezer.com/search/track?q=...`) entre
+un poste local et le comportement observé en prod, sans passer par le cache
+`ratings` — c'est ce qui a permis d'identifier la cause ici en quelques
+minutes plutôt que de soupçonner à tort le code de matching.
+
+---
+
 ## Fix : matching Deezer incorrect (artiste/durée jamais vérifiés) — 2026-09-17
 
 **Contexte :** défaut signalé — des extraits/liens Deezer associés à un
