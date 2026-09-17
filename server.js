@@ -1285,6 +1285,36 @@ async function handleDeezerLink(params, res) {
   });
 }
 
+// DEBUG TEMPORAIRE (2026-09-17) — à retirer une fois le diagnostic terminé,
+// cf. GAPS_ET_DECISIONS.md. Renvoie la réponse Deezer brute (avant filtre
+// artiste/durée) pour comparer ce que VOIT le serveur de prod vs. un test en
+// local, sans passer par le cache `ratings`.
+async function handleDeezerDebug(params, res) {
+  const type = params.get("type") || "track";
+  const seg = DEEZER_SEG[type] || "track";
+  const q = `${dzQuote(params.get("title") || "")} ${dzQuote(params.get("artist") || "")}`.trim();
+  const r = await safeFetch(`https://api.deezer.com/search/${seg}?q=${encodeURIComponent(q)}&limit=10`);
+  if (!r) return sendJson(res, 200, { ok: false, reason: "fetch failed" });
+  if (!r.ok) return sendJson(res, 200, { ok: false, status: r.status });
+  let data;
+  try {
+    data = await r.json();
+  } catch {
+    return sendJson(res, 200, { ok: false, reason: "bad json" });
+  }
+  sendJson(res, 200, {
+    ok: true,
+    query: q,
+    total: data.total,
+    hits: (data.data || []).map((h) => ({
+      id: h.id,
+      title: h.title,
+      artist: h.artist && h.artist.name,
+      duration: h.duration,
+    })),
+  });
+}
+
 // Admin : force un re-matching Deezer (id + extrait) pour un morceau/album
 // précis, un album entier, un artiste ou l'intégralité du cache — cf.
 // GAPS_ET_DECISIONS.md (2026-09-17, correctif du matching Deezer, ex.
@@ -1918,6 +1948,7 @@ const server = http.createServer(async (req, res) => {
       "/api/profile/claim",
       "/api/cover",
       "/api/deezer-link",
+      "/api/deezer-debug",
       "/api/search-history",
       "/api/resolve-artist",
       "/api/resolve-album",
@@ -2104,6 +2135,9 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === "/api/deezer-link" && req.method === "GET") {
       return await handleDeezerLink(url.searchParams, res);
+    }
+    if (pathname === "/api/deezer-debug" && req.method === "GET") {
+      return await handleDeezerDebug(url.searchParams, res);
     }
 
     if (pathname === "/api/my-ratings" && req.method === "GET") {
