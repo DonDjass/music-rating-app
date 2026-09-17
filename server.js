@@ -1187,8 +1187,15 @@ async function deezerFreshPreview(deezerId) {
 // Le cache Deezer (id, extrait) n'est PAS propre à un profil : on réutilise
 // n'importe quelle ligne de ce mbid, ou on crée une ligne technique
 // `profile IS NULL` (invisible des lectures de notations).
+//
+// `meta.releaseMbid` (morceau uniquement) : cf. GAPS_ET_DECISIONS.md
+// (2026-09-17) — avant ce correctif, une ligne technique créée ici pour un
+// morceau jamais ouvert/noté auparavant avait toujours `release_mbid = NULL`,
+// ce qui rendait le refresh admin "par album" incapable de l'atteindre. On
+// le pose à la création si on le connaît, et on rattrape (backfill) une
+// ligne déjà existante qui ne l'avait pas encore.
 function cacheDeezerResult(mbid, type, meta, result) {
-  let row = db.prepare(`SELECT id FROM ratings WHERE mbid = ? LIMIT 1`).get(mbid);
+  let row = db.prepare(`SELECT id, release_mbid FROM ratings WHERE mbid = ? LIMIT 1`).get(mbid);
   if (!row) {
     const info = db
       .prepare(
@@ -1201,9 +1208,14 @@ function cacheDeezerResult(mbid, type, meta, result) {
         meta.album || meta.title || "—",
         meta.artist || "—",
         meta.title || null,
-        type === "album" ? mbid : null
+        type === "album" ? mbid : meta.releaseMbid || null
       );
     row = { id: info.lastInsertRowid };
+  } else if (type === "track" && !row.release_mbid && meta.releaseMbid) {
+    db.prepare(`UPDATE ratings SET release_mbid = ? WHERE mbid = ? AND release_mbid IS NULL`).run(
+      meta.releaseMbid,
+      mbid
+    );
   }
   db.prepare(
     `UPDATE ratings SET deezer_id = ?, deezer_preview_url = ?, deezer_checked = 1 WHERE id = ?`
@@ -1219,6 +1231,7 @@ async function handleDeezerLink(params, res) {
   const title = params.get("title") || "";
   const artist = params.get("artist") || "";
   const durationMs = params.get("durationMs") ? Number(params.get("durationMs")) : null;
+  const releaseMbid = params.get("releaseMbid") || null;
 
   // N'importe quelle ligne de ce mbid porte le cache Deezer (voir
   // cacheDeezerResult) : on prend en priorité une ligne déjà résolue.
@@ -1230,6 +1243,14 @@ async function handleDeezerLink(params, res) {
     .get(mbid);
 
   if (row && row.deezer_checked) {
+    // Rattrape un release_mbid manquant (cf. cacheDeezerResult) même sur un
+    // cache déjà résolu, pour qu'un futur refresh "par album" l'atteigne.
+    if (type === "track" && releaseMbid) {
+      db.prepare(`UPDATE ratings SET release_mbid = ? WHERE mbid = ? AND release_mbid IS NULL`).run(
+        releaseMbid,
+        mbid
+      );
+    }
     let preview = row.deezer_preview_url;
     // Rafraîchit l'URL d'extrait si elle manque ou a expiré (morceau connu).
     if (
@@ -1256,7 +1277,7 @@ async function handleDeezerLink(params, res) {
     // Recherche indisponible : on ne mémorise rien, le client réessaiera.
     return sendJson(res, 200, { id: null, url: null, preview: null, transient: true });
   }
-  cacheDeezerResult(mbid, type, { title, artist }, result);
+  cacheDeezerResult(mbid, type, { title, artist, releaseMbid }, result);
   sendJson(res, 200, {
     id: result.id || null,
     url: deezerUrl(type, result.id),

@@ -127,7 +127,31 @@ de morceau, etc.).
   renvoyé par Deezer) — au mieux « extrait indisponible » partout sur cet
   album, ce qui est déjà mieux que le faux extrait actuel, mais pas une
   vraie correction.
-- **Décision (2026-09-17) :** corriger uniquement le matching Deezer
+- **MISE À JOUR (2026-09-17, corrigée) :** `cacheDeezerResult()` accepte
+  désormais `meta.releaseMbid` (morceau uniquement) et le pose à la création
+  de la ligne technique, au lieu de le laisser toujours vide. Une ligne déjà
+  existante sans `release_mbid` est aussi rattrapée (backfill) dès qu'un
+  appel — cache-hit ou fresh — fournit `releaseMbid`, y compris sur un
+  extrait déjà résolu. `/api/deezer-link` accepte le paramètre `releaseMbid`
+  ; le client (`wireTrackDeezer`) le transmet désormais depuis
+  `track.releaseMbid`. Ça ne corrige pas encore les lignes déjà polluées
+  avant ce correctif (ex. « What Up Gangsta », « Patiently Waiting »,
+  « P.I.M.P. » — polluées par un test de diagnostic avec un titre bidon
+  `title=x` pendant cette session, cf. plus bas) : un simple refresh (bouton
+  ↻, même au niveau morceau) les corrige, et l'ouverture normale de la fiche
+  morceau la fois suivante rattrape désormais le `release_mbid` au passage.
+
+**Découvert le même jour en creusant un signalement utilisateur — leçon de
+méthode** : `/api/deezer-link` n'est pas un endpoint de lecture pure ; en cas
+de cache absent, il déclenche une vraie recherche Deezer **et l'enregistre**
+avec les paramètres reçus. Un diagnostic fait dans cette session avec un
+titre bidon (`title=x`) sur des morceaux jamais résolus auparavant a créé de
+vraies (mauvaises) entrées en cache. À l'avenir, ne jamais appeler cet
+endpoint avec des paramètres factices sur un mbid dont l'état de cache n'est
+pas déjà confirmé — soit fournir le vrai titre/artiste, soit vérifier
+d'abord que `deezer_checked` est déjà à 1 pour ce mbid.
+
+**Décision (2026-09-17) :** corriger uniquement le matching Deezer
   maintenant (refresh ciblé sur les 3 albums déjà identifiés) ; le vrai fix
   — récupérer l'artiste **par morceau** via MusicBrainz (`inc=artist-credits`
   sur `/release/{mbid}`, lire `t["artist-credit"]` ou
