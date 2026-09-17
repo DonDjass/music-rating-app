@@ -459,6 +459,7 @@ const trackPreviewBtn = el("track-preview-btn");
 const previewAudio = el("track-preview-audio");
 const trackDeezerRefreshBtn = el("track-deezer-refresh-btn");
 const albumDeezerRefreshBtn = el("album-deezer-refresh-btn");
+const artistDeezerRefreshBtn = el("artist-deezer-refresh-btn");
 
 // Admin uniquement : vide le cache Deezer (id + extrait) d'un mbid précis
 // puis relance immédiatement une résolution fraîche (avec les filtres
@@ -485,6 +486,16 @@ albumDeezerRefreshBtn.addEventListener("click", async () => {
   wireDeezerButton(
     albumPlayBtn,
     { type: "album", mbid: currentAlbum.mbid, title: currentAlbum.title, artist: currentAlbum.artist },
+    "▶ Écouter"
+  );
+});
+
+artistDeezerRefreshBtn.addEventListener("click", async () => {
+  if (!currentArtist || !currentArtist.mbid) return;
+  await adminDeezerRefresh({ mbid: currentArtist.mbid });
+  wireDeezerButton(
+    artistPlayBtn,
+    { type: "artist", mbid: currentArtist.mbid, title: currentArtist.name, artist: currentArtist.name },
     "▶ Écouter"
   );
 });
@@ -2565,6 +2576,7 @@ async function openArtist(artist) {
       { type: "artist", mbid: data.mbid, title: data.name, artist: data.name },
       "▶ Écouter"
     );
+    artistDeezerRefreshBtn.hidden = !adminToken;
 
     const topTracks = data.topTracks || [];
     renderArtistNotation(topTracks);

@@ -251,7 +251,11 @@
       <button id="back-from-artist" class="drilldown-back" type="button">← Retour aux résultats</button>
 
       <header class="album-header" id="artist-header">
-        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="cover-wrap">
+          <div class="cover-art" aria-hidden="true">♪</div>
+          <button class="cover-refresh-btn" id="artist-deezer-refresh-btn" type="button" hidden
+                  aria-label="Admin : re-matcher Deezer pour cet artiste" title="Admin : re-matcher Deezer">↻</button>
+        </div>
         <div class="track-meta">
           <h1 id="artist-name">—</h1>
           <p class="tags" id="artist-tags" hidden></p>
