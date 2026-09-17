@@ -67,15 +67,17 @@
       </div>
 
       <header class="album-header" id="album-header" hidden>
-        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="cover-wrap">
+          <div class="cover-art" aria-hidden="true">♪</div>
+          <button class="cover-refresh-btn" id="album-deezer-refresh-btn" type="button" hidden
+                  aria-label="Admin : re-matcher Deezer pour cet album" title="Admin : re-matcher Deezer">↻</button>
+        </div>
         <div class="track-meta">
           <h1 id="album-title">—</h1>
           <p class="artist" id="album-artist">—</p>
           <p class="tags" id="album-year">—</p>
           <div class="header-actions">
             <button class="play-btn" id="album-play-btn" type="button">▶ Écouter</button>
-            <button class="like-btn" id="album-deezer-refresh-btn" type="button" hidden
-                    aria-label="Admin : re-matcher Deezer pour cet album" title="Admin : re-matcher Deezer">↻</button>
             <button class="like-btn" id="album-like-btn" type="button" aria-label="J'aime">♡</button>
             <button class="share-btn" id="album-share-btn" type="button" aria-label="Partager">
               <svg class="share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -507,7 +509,11 @@
       </div>
 
       <header class="track-header" id="track-header">
-        <div class="cover-art" aria-hidden="true">♪</div>
+        <div class="cover-wrap">
+          <div class="cover-art" aria-hidden="true">♪</div>
+          <button class="cover-refresh-btn" id="track-deezer-refresh-btn" type="button" hidden
+                  aria-label="Admin : re-matcher Deezer pour ce morceau" title="Admin : re-matcher Deezer">↻</button>
+        </div>
         <div class="track-meta">
           <h1 id="track-title">—</h1>
           <p class="artist" id="track-artist">—</p>
@@ -521,8 +527,6 @@
       <div class="track-actions-row">
         <button class="play-btn" id="track-play-btn" type="button">▶ Écouter</button>
         <button class="preview-btn" id="track-preview-btn" type="button" aria-label="Écouter l'extrait de 30 secondes">▶ Extrait</button>
-        <button class="like-btn" id="track-deezer-refresh-btn" type="button" hidden
-                aria-label="Admin : re-matcher Deezer pour ce morceau" title="Admin : re-matcher Deezer">↻</button>
         <button class="like-btn" id="like-btn" type="button" aria-label="Favori">♡</button>
         <button class="share-btn" id="track-share-btn" type="button" aria-label="Partager">
           <svg class="share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
