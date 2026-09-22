@@ -1,6 +1,6 @@
 # Music App — État actuel et changements récents
 
-> Récapitulatif lisible, à jour au **2026-09-16**. Pour le suivi formel
+> Récapitulatif lisible, à jour au **2026-09-23**. Pour le suivi formel
 > destiné au TRS Excel, voir `SPEC_UPDATES_PROPOSEES.md`. Pour la
 > traçabilité détaillée de chaque décision, voir `GAPS_ET_DECISIONS.md`.
 
@@ -50,7 +50,60 @@
 
 ---
 
-## 2. Changements de cette semaine (11 → 16 septembre 2026)
+## 2. Changements de cette semaine (17 → 23 septembre 2026)
+
+### 🎧 Fiabilisation du matching Deezer (extraits 30 s)
+Le matching qui associe un morceau/album MusicBrainz à sa fiche Deezer
+(pour l'extrait audio et le lien "Écouter") prenait jusqu'ici le premier
+résultat de recherche plein-texte sans vérifier qu'il s'agissait bien du
+même artiste — ce qui produisait des associations totalement fausses
+(ex. un morceau de Lino associé à un morceau de Cesária Évora). Corrigé :
+- Filtre **artiste** (tolérant casse/accents) + filtre **durée** (±7 s)
+  avant de retenir un candidat.
+- Si rien ne passe les filtres → "Non trouvé sur Deezer" plutôt qu'un
+  faux résultat.
+- **Limite externe identifiée (non corrigeable)** : Deezer renvoie parfois
+  un jeu de résultats différent selon la localisation du serveur qui
+  interroge son API. Quelques morceaux 50 Cent (*Patiently Waiting*,
+  *Candy Shop*) restent donc introuvables depuis le serveur de prod
+  (Railway) alors qu'ils existent bien sur Deezer et se trouvent
+  normalement en local. Accepté comme limite externe ; un override manuel
+  admin (coller l'ID Deezer à la main) a été envisagé puis **refusé pour
+  l'instant**.
+- **Cas connu non corrigé** : l'album *Première classe, volume 1. Les
+  Sessions* (compilation MusicBrainz créditée globalement "Various
+  Artists") applique cet artiste à tort à tous ses morceaux en base — le
+  matching Deezer ne pourra jamais y trouver le bon extrait tant que ce
+  problème de données source n'est pas traité séparément (hors périmètre
+  pour l'instant).
+
+### 🛠️ Outils admin de refresh Deezer *(nouveau)*
+Pour corriger un mauvais matching sans redéploiement :
+- Bouton **↻** (admin uniquement), en overlay bas-droite de la pochette
+  sur les fiches **morceau**, **album** et **artiste** : vide le cache
+  Deezer de cet élément précis et relance immédiatement une résolution
+  fraîche.
+- Bloc dédié dans **Réglages** (admin) pour vider par artiste ou tout
+  vider d'un coup.
+- Fix associé : `release_mbid` n'était jamais posé sur la ligne technique
+  créée pour un morceau jamais ouvert avant sa première résolution
+  Deezer, ce qui rendait un refresh "par album" incapable de l'atteindre.
+  Corrigé (pose à la création + rattrapage sur les lignes existantes).
+
+### 🐛 Fix : RÉINITIALISER puis ENREGISTRER ne supprimait pas la note
+Sur le feeling morceau/album et les critères morceau, vider le brouillon
+via "Réinitialiser" désactivait le bouton "Enregistrer", empêchant
+d'effacer une note déjà existante. Aligné sur le comportement déjà
+correct des critères album (Réinitialiser + Enregistrer = supprime la
+note en base).
+
+### 🔀 Ordre des boutons "Noter" sur la fiche album
+**"Noter les morceaux"** apparaît maintenant **avant** "Noter l'album",
+pour encourager naturellement à noter les morceaux en premier.
+
+---
+
+## 2bis. Changements de la semaine précédente (11 → 16 septembre 2026)
 
 ### 🔗 Partage de liens directs *(nouveau)*
 Chaque morceau et chaque album a désormais une **URL stable**
@@ -108,6 +161,12 @@ toute action verrouillée), tracklist comprise pour un album. Un bouton
   développé.
 - **Pas de vrai système de comptes** : les profils légers séparent les
   notations mais sans authentification réelle.
+- **Extrait Deezer indisponible sur certains morceaux depuis la prod** :
+  limite externe (résultats Deezer dépendants de la localisation du
+  serveur appelant), pas de correctif possible côté code.
+- **Compilations "Various Artists"** (ex. *Première classe, volume 1*) :
+  l'artiste réel par morceau n'est pas récupéré depuis MusicBrainz,
+  affecte l'affichage tracklist et le matching Deezer sur ces albums.
 
 ---
 
