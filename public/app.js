@@ -115,8 +115,25 @@ const artistNoteCriteria = el("artist-note-criteria");
 const artistNoteGlobal = el("artist-note-global");
 const artistPopup = el("artist-popup");
 const artistPopupText = el("artist-popup-text");
+const artistDiscographyAlbumsDetails = el("artist-discography-albums-details");
 const artistDiscographyEl = el("artist-discography");
+const artistDiscographyAlbumsCount = el("artist-discography-albums-count");
+const artistDiscographyOtherDetails = el("artist-discography-other-details");
+const artistDiscographyOtherEl = el("artist-discography-other");
+const artistDiscographyOtherCount = el("artist-discography-other-count");
 const artistTopTracksEl = el("artist-top-tracks");
+
+// Rendu différé au premier dépliage de "Autres" : évite de charger les
+// pochettes (potentiellement des dizaines) tant que la section reste repliée.
+// "Albums" est ouvert par défaut, donc rendu tout de suite (cf. openArtist).
+let pendingOtherDiscography = null;
+artistDiscographyOtherDetails.addEventListener("toggle", () => {
+  if (!artistDiscographyOtherDetails.open || !pendingOtherDiscography) return;
+  pendingOtherDiscography.forEach((a) =>
+    artistDiscographyOtherEl.appendChild(createDiscographyRow(a))
+  );
+  pendingOtherDiscography = null;
+});
 const backFromArtistBtn = el("back-from-artist");
 
 const albumSticky = el("album-sticky");
@@ -662,7 +679,8 @@ function render() {
   renderTrackViewingBanner();
   trackDeezerRefreshBtn.hidden = !adminToken;
   trackTitleEl.textContent = track.title;
-  trackArtistEl.textContent = track.artist;
+  trackArtistEl.textContent = "";
+  appendArtistWithFeatures(trackArtistEl, track.artist, track.features);
   trackAlbumEl.textContent = track.albumTitle;
   trackTagsEl.textContent = track.tags;
 
@@ -1430,9 +1448,28 @@ function setSearchStatus(message) {
 // --- Construction des lignes de résultat (réutilisées par la recherche
 // catégorisée et par le drill-down album/artiste) ---
 
-function buildResultItem(titleText, metaText, onClick) {
+// Petite miniature (pochette album ou photo artiste selon coverParams.type),
+// chargée en arrière-plan via /api/cover (cache serveur 24h, cf. loadCoverInto).
+function makeCoverThumb(coverParams) {
+  const thumb = document.createElement("div");
+  thumb.className = "search-result-cover";
+  thumb.textContent = "♪";
+  loadCoverInto(thumb, coverParams);
+  return thumb;
+}
+
+// `coverParams` (optionnel) = params pour /api/cover (cf. loadCoverInto) ;
+// affiche une miniature à gauche du résultat quand fourni. `meta` est soit
+// un texte brut, soit une fonction (metaEl) => void pour construire un
+// contenu avec des portions stylées (ex. featurings, cf. .feat-credit).
+function buildResultItem(titleText, meta, onClick, coverParams = null) {
   const li = document.createElement("li");
   li.className = "search-result";
+
+  const mainEl = document.createElement("div");
+  mainEl.className = "search-result-main";
+
+  if (coverParams) mainEl.appendChild(makeCoverThumb(coverParams));
 
   const infoEl = document.createElement("div");
   infoEl.className = "search-result-info";
@@ -1443,20 +1480,42 @@ function buildResultItem(titleText, metaText, onClick) {
 
   const metaEl = document.createElement("div");
   metaEl.className = "search-result-meta";
-  metaEl.textContent = metaText;
+  if (typeof meta === "function") {
+    meta(metaEl);
+  } else {
+    metaEl.textContent = meta;
+  }
 
   infoEl.appendChild(titleEl);
   infoEl.appendChild(metaEl);
-  li.appendChild(infoEl);
+  mainEl.appendChild(infoEl);
+  li.appendChild(mainEl);
   li.addEventListener("click", onClick);
+
   return li;
 }
 
-function trackMeta(r) {
-  const parts = [r.artist];
-  if (r.album) parts.push(r.album);
-  if (r.date) parts.push(r.date.slice(0, 4));
-  return parts.join(" — ");
+// " feat. A, B +N" (tronqué à 2 noms au-delà) — jamais l'artiste principal,
+// juste le suffixe à mettre en accent (cf. .feat-credit).
+function featSuffixText(features) {
+  if (!features || features.length === 0) return "";
+  const MAX_SHOWN = 2;
+  const shown = features.slice(0, MAX_SHOWN).join(", ");
+  const extra = features.length - MAX_SHOWN;
+  return ` feat. ${shown}${extra > 0 ? ` +${extra}` : ""}`;
+}
+
+// Ajoute "Artiste" + éventuellement " feat. ..." (en accent .feat-credit)
+// dans un conteneur DOM déjà présent.
+function appendArtistWithFeatures(container, artist, features) {
+  container.appendChild(document.createTextNode(artist));
+  const suffix = featSuffixText(features);
+  if (suffix) {
+    const span = document.createElement("span");
+    span.className = "feat-credit";
+    span.textContent = suffix;
+    container.appendChild(span);
+  }
 }
 
 // `context` (optionnel) = { tracks, index } quand ce résultat fait partie
@@ -1464,7 +1523,20 @@ function trackMeta(r) {
 // fiche. Absent pour un résultat de recherche direct ou un morceau
 // d'artiste (pas d'ordre naturel).
 function createTrackResultItem(r, context = null) {
-  return buildResultItem(r.title, trackMeta(r), () => selectTrack(r, context));
+  return buildResultItem(
+    r.title,
+    (metaEl) => {
+      appendArtistWithFeatures(metaEl, r.artist, r.features);
+      if (r.album) metaEl.appendChild(document.createTextNode(` — ${r.album}`));
+      if (r.date) metaEl.appendChild(document.createTextNode(` — ${r.date.slice(0, 4)}`));
+    },
+    () => selectTrack(r, context),
+    {
+      releaseMbid: r.releaseMbid || "",
+      artist: r.artist || "",
+      album: r.album || "",
+    }
+  );
 }
 
 function formatMsShort(ms) {
@@ -1475,16 +1547,23 @@ function formatMsShort(ms) {
   return `${minutes}:${seconds}`;
 }
 
-// Ligne de tracklist d'album : titre du morceau à gauche, puis durée et
-// NOTE GLOBALE ("—" si non noté). Artiste/album/année ne sont pas répétés
-// (ils sont dans l'en-tête).
+// Ligne de tracklist d'album : titre du morceau (+ featurings éventuels) à
+// gauche, puis durée et NOTE GLOBALE ("—" si non noté). Artiste/album/année
+// ne sont pas répétés (ils sont dans l'en-tête).
 function createTracklistRow(r, context) {
   const li = document.createElement("li");
   li.className = "tracklist-row";
 
   const titleEl = document.createElement("span");
   titleEl.className = "tracklist-title";
-  titleEl.textContent = r.title;
+  titleEl.appendChild(document.createTextNode(r.title));
+  const featSuffix = featSuffixText(r.features);
+  if (featSuffix) {
+    const span = document.createElement("span");
+    span.className = "feat-credit";
+    span.textContent = ` (${featSuffix.trim()})`;
+    titleEl.appendChild(span);
+  }
   li.appendChild(titleEl);
 
   const durEl = document.createElement("span");
@@ -1506,12 +1585,20 @@ function createAlbumResultItem(a) {
   if (a.date) parts.push(a.date.slice(0, 4));
   // Signale les non-albums qui restent dans l'onglet (EP, compilation, live…).
   if (a.primaryType && a.primaryType !== "Album") parts.push(a.primaryType);
-  return buildResultItem(a.title, parts.join(" — "), () => openAlbum(a));
+  return buildResultItem(a.title, parts.join(" — "), () => openAlbum(a), {
+    releaseMbid: a.mbid || "",
+    rg: a.releaseGroupMbid || "",
+    artist: a.artist || "",
+    album: a.title || "",
+  });
 }
 
 function createArtistResultItem(a) {
   const meta = [a.type, a.country].filter(Boolean).join(" — ") || "Artiste";
-  return buildResultItem(a.name, meta, () => openArtist(a));
+  return buildResultItem(a.name, meta, () => openArtist(a), {
+    type: "artist",
+    artist: a.name || "",
+  });
 }
 
 function renderCategory(container, items, createItemFn, emptyMessage, isError = false) {
@@ -2471,7 +2558,15 @@ function renderArtistNotation(topTracks) {
 // Ligne de discographie : titre de l'album, année (+ type si ≠ Album), note.
 function createDiscographyRow(album) {
   const li = document.createElement("li");
-  li.className = "tracklist-row";
+  li.className = "tracklist-row has-cover";
+
+  li.appendChild(
+    makeCoverThumb({
+      rg: album.releaseGroupMbid || "",
+      artist: currentArtist ? currentArtist.name : "",
+      album: album.title || "",
+    })
+  );
 
   const titleEl = document.createElement("span");
   titleEl.className = "tracklist-title";
@@ -2482,7 +2577,14 @@ function createDiscographyRow(album) {
   metaEl.className = "tracklist-duration";
   const metaParts = [];
   if (album.date) metaParts.push(album.date.slice(0, 4));
-  if (album.primaryType && album.primaryType !== "Album") metaParts.push(album.primaryType);
+  // Type secondaire (Compilation, Mixtape/Street, Live…) prioritaire sur le
+  // primary-type : c'est lui qui explique pourquoi l'entrée est dans "Autres"
+  // malgré un primary-type "Album".
+  if (album.secondaryTypes && album.secondaryTypes.length) {
+    metaParts.push(album.secondaryTypes.join(", "));
+  } else if (album.primaryType && album.primaryType !== "Album") {
+    metaParts.push(album.primaryType);
+  }
   metaEl.textContent = metaParts.join(" · ");
   li.appendChild(metaEl);
 
@@ -2505,7 +2607,15 @@ function createDiscographyRow(album) {
 // Ligne "meilleurs titres" : titre du morceau, album, NOTE GLOBALE (toujours renseignée).
 function createArtistTopTrackRow(r) {
   const li = document.createElement("li");
-  li.className = "tracklist-row";
+  li.className = "tracklist-row has-cover";
+
+  li.appendChild(
+    makeCoverThumb({
+      releaseMbid: r.releaseMbid || "",
+      artist: r.artist || "",
+      album: r.albumTitle || "",
+    })
+  );
 
   const titleEl = document.createElement("span");
   titleEl.className = "tracklist-title";
@@ -2556,6 +2666,11 @@ async function openArtist(artist) {
   wireDeezerButton(artistPlayBtn, {}, "▶ Écouter");
   renderArtistNotation([]);
   artistDiscographyEl.innerHTML = "";
+  artistDiscographyAlbumsDetails.open = true;
+  artistDiscographyOtherEl.innerHTML = "";
+  artistDiscographyOtherDetails.hidden = true;
+  artistDiscographyOtherDetails.open = false;
+  pendingOtherDiscography = null;
   artistTopTracksEl.innerHTML = "";
   setArtistStatus("Chargement…");
   showArtistView();
@@ -2581,15 +2696,31 @@ async function openArtist(artist) {
     const topTracks = data.topTracks || [];
     renderArtistNotation(topTracks);
 
-    // Discographie
+    // Discographie : "Albums" = vrais projets studio (Album ou EP, sans
+    // aucun type secondaire) ; "Autres" = tout le reste (compilation, live,
+    // mixtape, Broadcast/Other...), replié par défaut — évite d'afficher et
+    // de charger la pochette de parfois des dizaines d'entrées annexes.
     const discography = data.discography || [];
-    if (discography.length === 0) {
+    const isRealAlbumOrEp = (a) =>
+      (a.primaryType === "Album" || a.primaryType === "EP") &&
+      (!a.secondaryTypes || a.secondaryTypes.length === 0);
+    const albums = discography.filter(isRealAlbumOrEp);
+    const others = discography.filter((a) => !isRealAlbumOrEp(a));
+
+    artistDiscographyAlbumsCount.textContent = String(albums.length);
+    if (albums.length === 0) {
       const li = document.createElement("li");
       li.className = "search-empty";
       li.textContent = "Aucun album trouvé pour cet artiste.";
       artistDiscographyEl.appendChild(li);
     } else {
-      discography.forEach((a) => artistDiscographyEl.appendChild(createDiscographyRow(a)));
+      albums.forEach((a) => artistDiscographyEl.appendChild(createDiscographyRow(a)));
+    }
+
+    if (others.length > 0) {
+      artistDiscographyOtherDetails.hidden = false;
+      artistDiscographyOtherCount.textContent = String(others.length);
+      pendingOtherDiscography = others; // rendu différé (cf. écouteur "toggle")
     }
 
     // Meilleurs titres (uniquement les morceaux notés)
@@ -2642,6 +2773,9 @@ async function loadTrack(mbid, meta = {}, context = null, viewProfile = null) {
     durationMs: meta.durationMs || "",
     releaseMbid: meta.releaseMbid || "",
   });
+  if (meta.features && meta.features.length) {
+    params.set("features", JSON.stringify(meta.features));
+  }
   if (viewProfile) params.set("viewProfile", viewProfile);
 
   track = await api(`/api/tracks/${encodeURIComponent(mbid)}?${params.toString()}`, "GET");

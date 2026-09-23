@@ -257,8 +257,38 @@ body {
   background: rgba(244, 196, 48, 0.08);
 }
 
+.search-result-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.search-result-cover {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #3a2f22, #171412);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--gold);
+  overflow: hidden;
+}
+
 .search-result-info {
   min-width: 0;
+}
+
+/* Suffixe "feat. ..." (recherche, fiche morceau, tracklist d'album) : en
+   accent, plus léger que le texte qui l'entoure (souvent en gras). */
+.feat-credit {
+  color: var(--gold);
+  font-weight: 400;
 }
 
 .search-result-title {
@@ -473,6 +503,38 @@ body {
   padding: 0;
 }
 
+.artist-discography-group {
+  margin-top: 10px;
+}
+
+.artist-discography-group > summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--grey);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 2px;
+}
+
+.artist-discography-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.artist-discography-group > summary::before {
+  content: "▸ ";
+  color: var(--gold);
+}
+
+.artist-discography-group[open] > summary::before {
+  content: "▾ ";
+}
+
+.artist-discography-group:hover > summary {
+  color: var(--white);
+}
+
 .tracklist-row {
   display: flex;
   align-items: baseline;
@@ -480,6 +542,10 @@ body {
   padding: 12px 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   cursor: pointer;
+}
+
+.tracklist-row.has-cover {
+  align-items: center;
 }
 
 .tracklist-row:first-child {

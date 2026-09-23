@@ -303,11 +303,16 @@ async function fetchWithRetry(url, options = {}, retries = 3) {
 }
 
 function recordingToTrack(rec) {
+  const credit = rec["artist-credit"] || [];
   return {
     mbid: rec.id,
     title: rec.title,
-    artist: rec["artist-credit"]?.[0]?.name || "Artiste inconnu",
+    artist: credit[0]?.name || "Artiste inconnu",
+    // Featurings (hors artiste principal) : affichage uniquement, jamais
+    // persisté en base (une ligne `ratings` garde un seul champ `artist`).
+    features: credit.slice(1).map((c) => c.name).filter(Boolean),
     album: rec.releases?.[0]?.title || null,
+    releaseMbid: rec.releases?.[0]?.id || null, // pochette (cf. /api/cover)
     date: rec.releases?.[0]?.date || rec["first-release-date"] || null,
     durationMs: rec.length || null,
   };
@@ -399,10 +404,16 @@ async function getReleaseTracks(releaseMbid) {
   for (const medium of data.media || []) {
     for (const t of medium.tracks || []) {
       if (!t.recording?.id) continue;
+      // Featurings propres à CE morceau (déjà présents dans la même réponse,
+      // aucun appel MusicBrainz supplémentaire) — l'artiste principal affiché
+      // reste celui de l'album, cf. limite "Various Artists" documentée
+      // dans GAPS_ET_DECISIONS.md.
+      const trackCredit = t.recording["artist-credit"] || [];
       tracks.push({
         mbid: t.recording.id,
         title: t.title || t.recording.title,
         artist,
+        features: trackCredit.slice(1).map((c) => c.name).filter(Boolean),
         album,
         date,
         position: t.number ?? t.position ?? null,
@@ -464,6 +475,9 @@ async function getArtistPage(mbid, profile) {
       title: rg.title,
       date: rg["first-release-date"] || null,
       primaryType: rg["primary-type"] || null,
+      // Ex. Compilation, Live, Mixtape/Street... distingue un vrai
+      // album/EP studio d'une sortie annexe malgré un primary-type "Album".
+      secondaryTypes: rg["secondary-types"] || [],
       note: noteByAlbum[(rg.title || "").toLowerCase()] ?? null,
     }))
     .sort((x, y) => (y.date || "").localeCompare(x.date || "")); // récent -> ancien
@@ -1466,7 +1480,23 @@ function handleGetTrack(mbid, searchParams, profile, res) {
   };
 
   const row = getOrCreateTrackRow(mbid, profile, meta);
-  sendJson(res, 200, serializeRow(row));
+  const payload = serializeRow(row);
+
+  // Featurings : affichage uniquement, jamais stockés en base. Présents
+  // seulement quand la navigation vient d'un résultat MusicBrainz frais
+  // (cf. recordingToTrack) ; absents sinon (Mes notations, Précédent/
+  // Suivant dans un album...), sans régression — juste pas de "feat.".
+  const featuresParam = searchParams.get("features");
+  if (featuresParam) {
+    try {
+      const features = JSON.parse(featuresParam);
+      if (Array.isArray(features) && features.length) payload.features = features;
+    } catch {
+      /* paramètre malformé, ignoré */
+    }
+  }
+
+  sendJson(res, 200, payload);
 }
 
 // "Mes notations" : morceaux ayant au moins une donnée de notation

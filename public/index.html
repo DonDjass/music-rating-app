@@ -293,7 +293,16 @@
       <p id="artist-status" class="search-status" hidden></p>
 
       <h2 class="artist-section-title">Discographie</h2>
-      <ul id="artist-discography" class="tracklist"></ul>
+
+      <details id="artist-discography-albums-details" class="artist-discography-group" open>
+        <summary>Albums (<span id="artist-discography-albums-count">0</span>)</summary>
+        <ul id="artist-discography" class="tracklist"></ul>
+      </details>
+
+      <details id="artist-discography-other-details" class="artist-discography-group" hidden>
+        <summary>Autres (<span id="artist-discography-other-count">0</span>)</summary>
+        <ul id="artist-discography-other" class="tracklist"></ul>
+      </details>
 
       <h2 class="artist-section-title">Meilleurs titres</h2>
       <ul id="artist-top-tracks" class="tracklist"></ul>

@@ -1569,6 +1569,44 @@ onglets ; le dernier enregistrement gagne, sans détection de conflit.
 **Justification :** cas limite hors périmètre d'une v1 mono-utilisateur
 locale.
 
+### 12. Featurings (« feat. ») — affichage seul, portée volontairement limitée — 2026-09-23
+**Contexte :** demande explicite d'afficher les artistes en featuring d'un
+morceau (ex. « JAY-Z feat. Kanye West, Frank Ocean »), sans toucher au
+modèle de données — une notation reste rattachée à un seul champ `artist`
+(cf. section « Un featuring par morceau, plus tard : notation par
+artiste » ci-dessous pour l'évolution envisagée à terme).
+**Choix :**
+- `artist-credit` (fourni par MusicBrainz) est découpé en artiste principal
+  (`artist-credit[0]`) + liste de featurings, reformatés nous-mêmes
+  (« Primary feat. A, B +N », tronqué au-delà de 2) plutôt que d'afficher
+  tel quel le texte MusicBrainz (jointures très hétérogènes selon les
+  contributeurs : « feat. », « & », « vs. », « pres. »...).
+- Les featurings ne sont **jamais persistés** en base : ils transitent en
+  paramètre de requête (`features`, JSON) uniquement quand la navigation
+  vient d'un résultat de recherche fraîchement obtenu, et sont renvoyés tels
+  quels par `/api/tracks/:mbid` sans passer par `getOrCreateTrackRow`.
+- **Étendu à la tracklist d'un album (2026-09-23)** : `getReleaseTracks()`
+  lisait déjà `t.recording["artist-credit"]` implicitement dans la réponse
+  MusicBrainz (`inc=recordings+artists`) sans jamais l'exploiter par
+  morceau (seul l'artiste au niveau album était utilisé, cf. bug "Various
+  Artists" plus haut) — aucun appel supplémentaire nécessaire, donc aucun
+  coût de performance pour cette extension. Le titre affiche désormais
+  "(feat. A, B +N)" dans la tracklist, et l'info suit "Précédent/Suivant"
+  automatiquement (même mécanisme `meta.features` que la recherche).
+- **Reste non couvert :** "Mes notations" et "Meilleurs titres" (fiche
+  artiste), qui ne repartent pas d'un appel MusicBrainz frais mais d'une
+  ligne déjà en base (un seul champ `artist`, pas de featurings stockés).
+- **Détail cosmétique connu, non corrigé :** sur la fiche morceau, le
+  soulignement "lien cliquable" (`.artist.linkable`) s'étend visuellement
+  sur tout le texte, y compris la partie "feat. X, Y" — fonctionnellement
+  le clic ouvre bien la fiche du seul artiste principal (`track.artist`
+  reste inchangé), c'est uniquement la zone visuellement soulignée qui est
+  plus large que l'élément réellement cliquable.
+**Justification :** portée demandée explicitement limitée à l'affichage ;
+robustesse (reformater nous-mêmes plutôt que reproduire le texte brut
+MusicBrainz) et non-régression du modèle de données priment sur une
+couverture exhaustive de tous les écrans.
+
 ---
 
 ## Écarts explicites (hors ambiguïté — demandés directement, notés pour mémoire)
