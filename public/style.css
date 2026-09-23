@@ -1657,6 +1657,131 @@ input[type="range"]::-moz-range-track {
   color: #2a1a00;
 }
 
+/* "Mes contacts" (Follow Niveau 0) : même bouton que les autres, estompé —
+   même traitement que les autres "Bientôt disponible" (.is-disabled). */
+.home-scope-filter.is-soon {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- Accueil : sections DERNIÈRES SORTIES / ALL TIME (TRS 23/09/2026) --- */
+
+/* Onglets ALL TIME / DERNIÈRES SORTIES, façon onglets de classeur
+   (demande explicite 2026-09-23) : fond gris foncé, bordure dorée, coins
+   arrondis en haut seulement, posés sur une ligne dorée. L'onglet actif est
+   plus haut et « coupe » la ligne (bordure basse = son propre fond) pour
+   paraître ouvert sur le contenu ; l'inactif reste en retrait, derrière. */
+.home-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 0 6px;
+  border-bottom: 2px solid var(--gold);
+  margin-bottom: 14px;
+}
+
+.home-tab {
+  flex: 1;
+  background: #1f1f22;
+  border: 2px solid rgba(244, 196, 48, 0.4);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  color: var(--grey);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+
+.home-tab.active {
+  background: var(--track-dark);
+  border-color: var(--gold);
+  border-bottom: 2px solid var(--track-dark);
+  margin-bottom: -2px;
+  padding: 12px 4px;
+  color: var(--gold);
+}
+
+.home-soon-card {
+  border: 1px dashed var(--card-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--grey);
+}
+
+.home-soon-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Vue (Votants/Moyenne) + tri (Récent/Mieux noté) : deux sélecteurs
+   segmentés compacts sur une seule ligne. */
+.home-modes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.home-seg {
+  flex: 1;
+  display: flex;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.home-seg-btn {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--grey);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.home-seg-btn.active {
+  background: var(--gold-pale);
+  color: #2a1a00;
+}
+
+/* Tags artistes : ligne défilante horizontalement, sans barre visible. */
+.home-tags {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: -4px 0 12px;
+  padding-bottom: 2px;
+}
+
+.home-tags::-webkit-scrollbar {
+  display: none;
+}
+
+.home-tag {
+  flex-shrink: 0;
+  background: #171412;
+  border: 1px solid var(--divider);
+  color: var(--white);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.home-tag.active {
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+}
+
 .home-filters {
   display: flex;
   flex-wrap: wrap;

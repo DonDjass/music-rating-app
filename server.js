@@ -185,6 +185,13 @@ const NEW_COLUMNS_2 = {
   // resynchroniser toutes seules avec une moyenne que personne n'a demandée.
   // Album seulement (sans effet sur les lignes track/artist).
   feeling_is_manual: "INTEGER NOT NULL DEFAULT 1",
+  // Date de la dernière évolution de la NOTE GLOBALE (création OU
+  // modification d'un vote) — tenue à jour par le trigger
+  // `ratings_rated_at` ci-dessous. NULL tant que la note n'a pas bougé
+  // depuis la migration : les lectures utilisent COALESCE(rated_at,
+  // created_at). Sert au tri chronologique de la vue ALL TIME « Moyenne »
+  // (une œuvre remonte dès qu'un vote la concerne, cf. TRS 23/09/2026).
+  rated_at: "TEXT",
 };
 
 const existingColumns = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
@@ -206,6 +213,18 @@ if (!hadProfileColumn) {
     console.log(`Profils : ${migrated.changes} notation(s) existante(s) rattachée(s) à « ${DEFAULT_PROFILE} ».`);
   }
 }
+
+// Trigger plutôt qu'un `rated_at = ...` dans chaque handler d'écriture
+// (feeling, critères, réinitialisations, recalcul album…) : aucun chemin
+// qui modifie la note globale ne peut l'oublier.
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS ratings_rated_at
+  AFTER UPDATE OF global_rating ON ratings
+  WHEN NEW.global_rating IS NOT OLD.global_rating
+  BEGIN
+    UPDATE ratings SET rated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END
+`);
 
 
 // Évaluation par critères d'une notation (album pour l'instant ; morceau plus
@@ -1517,6 +1536,32 @@ function handleMyRatings(profile, res) {
   sendJson(res, 200, { results: rows.map(serializeRow) });
 }
 
+// Tuiles Artiste de l'accueil — identiques en vue Votants et Moyenne (rôle
+// des artistes dans ALL TIME : TO BE DISCUSSED, cf. TRS 23/09/2026).
+function homeArtists(mine, p) {
+  return db
+    .prepare(
+      `SELECT artist, profile, AVG(global_rating) AS note, MAX(created_at) AS created_at
+         FROM ratings
+        WHERE global_rating IS NOT NULL
+          AND entity_type = 'track' AND profile IS NOT NULL
+          AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
+          ${mine ? "AND profile = ?" : ""}
+        GROUP BY artist COLLATE NOCASE${mine ? "" : ", profile"}
+        ORDER BY created_at DESC`
+    )
+    .all(...p)
+    .map((r) => ({
+      type: "artist",
+      title: r.artist,
+      artist: r.artist,
+      note: round1(r.note),
+      isClassic: false,
+      createdAt: r.created_at,
+      profile: r.profile,
+    }));
+}
+
 // Accueil : mosaïque des éléments notés. Morceaux = chaque ligne avec une
 // NOTE GLOBALE ; albums / artistes = regroupés par nom (moyenne des morceaux
 // notés), triés du plus récemment noté au plus ancien.
@@ -1576,27 +1621,83 @@ function handleHome(profile, scope, res) {
       profile: r.profile,
     }));
 
-  const artists = db
+  const artists = homeArtists(mine, p);
+
+  sendJson(res, 200, { tracks, albums, artists });
+}
+
+// Accueil ALL TIME, vue « Moyenne » (TRS 23/09/2026) : mêmes lignes que la
+// vue Votants (handleHome), agrégées par ŒUVRE au lieu de par (œuvre, profil).
+//  - Morceau : GROUP BY mbid → moyenne des notes globales + nb de votants.
+//  - Album : moyenne des notes-album de chaque votant (elles-mêmes = moyenne
+//    de SES morceaux notés, comme la tuile Album de la vue Votants) → chaque
+//    votant pèse autant, quel que soit le nombre de morceaux qu'il a notés.
+//  - Pas de seuil de votants (1 vote suffit).
+//  - Date = notation la plus récente reçue, modification comprise
+//    (COALESCE(rated_at, created_at)).
+//  - Artistes : hors concept Moyenne (TO BE DISCUSSED) → mêmes tuiles que
+//    la vue Votants, inchangées.
+// `scope` "mine" : œuvres que J'AI notées, mais moyenne de tous les votants.
+function handleHomeAverage(profile, scope, res) {
+  const mine = scope === "mine";
+  const p = mine ? [profile] : [];
+
+  const tracks = db
     .prepare(
-      `SELECT artist, profile, AVG(global_rating) AS note, MAX(created_at) AS created_at
+      `SELECT mbid, MAX(track_title) AS track_title, MAX(album) AS album,
+              MAX(artist) AS artist, MAX(release_mbid) AS release_mbid,
+              AVG(global_rating) AS note, COUNT(DISTINCT profile) AS voters,
+              MAX(COALESCE(rated_at, created_at)) AS last_at
          FROM ratings
-        WHERE global_rating IS NOT NULL
+        WHERE mbid IS NOT NULL AND global_rating IS NOT NULL
           AND entity_type = 'track' AND profile IS NOT NULL
-          AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
-          ${mine ? "AND profile = ?" : ""}
-        GROUP BY artist COLLATE NOCASE${mine ? "" : ", profile"}
-        ORDER BY created_at DESC`
+        GROUP BY mbid
+        ${mine ? "HAVING SUM(profile = ?) > 0" : ""}
+        ORDER BY last_at DESC`
     )
     .all(...p)
     .map((r) => ({
-      type: "artist",
-      title: r.artist,
+      type: "track",
+      mbid: r.mbid,
+      title: r.track_title || r.album,
+      artist: r.artist,
+      album: r.album,
+      releaseMbid: r.release_mbid,
+      note: round1(r.note),
+      voters: r.voters,
+      createdAt: r.last_at,
+    }));
+
+  const albums = db
+    .prepare(
+      `WITH per_voter AS (
+         SELECT album, artist, profile, AVG(global_rating) AS note,
+                MAX(COALESCE(rated_at, created_at)) AS last_at
+           FROM ratings
+          WHERE global_rating IS NOT NULL
+            AND entity_type = 'track' AND profile IS NOT NULL
+            AND album IS NOT NULL AND album NOT IN ('', 'Album inconnu')
+            AND artist IS NOT NULL AND artist NOT IN ('', 'Artiste inconnu')
+          GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE, profile
+       )
+       SELECT album, artist, AVG(note) AS note, COUNT(*) AS voters,
+              MAX(last_at) AS last_at
+         FROM per_voter
+        GROUP BY album COLLATE NOCASE, artist COLLATE NOCASE
+        ${mine ? "HAVING SUM(profile = ?) > 0" : ""}
+        ORDER BY last_at DESC`
+    )
+    .all(...p)
+    .map((r) => ({
+      type: "album",
+      title: r.album,
       artist: r.artist,
       note: round1(r.note),
-      isClassic: false,
-      createdAt: r.created_at,
-      profile: r.profile,
+      voters: r.voters,
+      createdAt: r.last_at,
     }));
+
+  const artists = homeArtists(mine, p);
 
   sendJson(res, 200, { tracks, albums, artists });
 }
@@ -2141,6 +2242,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/api/home" && req.method === "GET") {
+      if (url.searchParams.get("view") === "avg") {
+        return handleHomeAverage(profile, url.searchParams.get("scope"), res);
+      }
       return handleHome(profile, url.searchParams.get("scope"), res);
     }
 

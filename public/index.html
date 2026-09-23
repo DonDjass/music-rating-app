@@ -317,12 +317,47 @@
         <span>Chercher un morceau, un album, un artiste…</span>
       </button>
 
+      <!-- Onglets de l'accueil (demande explicite 2026-09-23). ALL TIME par
+           défaut : c'est le seul qui a du contenu pour l'instant. -->
+      <div class="home-tabs" id="home-tabs" role="tablist">
+        <button class="home-tab active" data-tab="alltime" type="button" role="tab" aria-selected="true">All time</button>
+        <button class="home-tab" data-tab="releases" type="button" role="tab" aria-selected="false">Dernières sorties</button>
+      </div>
+
+      <!-- DERNIÈRES SORTIES : zone réservée, sans contenu simulé ni mécanisme
+           de récupération (hors scope, cf. TRS 23/09/2026). -->
+      <div id="home-releases" hidden>
+        <div class="home-soon-card">
+          <span class="onboarding-soon-label">Bientôt disponible</span>
+          <p>Les nouveautés musicales arriveront ici.</p>
+        </div>
+      </div>
+
+      <div id="home-alltime">
+
       <!-- "Tout" est déjà pris par le filtre de type juste en dessous (Tout /
            Morceaux / Albums / Artistes) — "Tout le monde" évite l'ambiguïté
            entre les deux lignes de filtres. -->
       <div class="home-scope-filters" id="home-scope-filters">
         <button class="home-scope-filter active" data-scope="all" type="button">Tout le monde</button>
         <button class="home-scope-filter" data-scope="mine" type="button">Mes notations</button>
+        <!-- Follow Niveau 0 : place réservée, aucune logique (pas de table
+             follows) — le clic affiche juste "Bientôt disponible". -->
+        <button class="home-scope-filter is-soon" id="home-scope-contacts" type="button" aria-disabled="true" title="Bientôt disponible">Mes contacts</button>
+      </div>
+
+      <!-- Vue (Votants/Moyenne) et tri (Récent/Note) : sélecteurs compacts
+           sur une même ligne plutôt que des onglets empilés (TRS, BR
+           onglets permanents). -->
+      <div class="home-modes">
+        <div class="home-seg" id="home-view-seg" role="group" aria-label="Vue">
+          <button class="home-seg-btn active" data-view="voters" type="button">Votants</button>
+          <button class="home-seg-btn" data-view="avg" type="button">Moyenne</button>
+        </div>
+        <div class="home-seg" id="home-sort-seg" role="group" aria-label="Tri">
+          <button class="home-seg-btn active" data-sort="date" type="button">Récent</button>
+          <button class="home-seg-btn" data-sort="note" type="button">Mieux noté</button>
+        </div>
       </div>
 
       <div class="home-filters" id="home-filters">
@@ -331,6 +366,10 @@
         <button class="home-filter" data-filter="albums" type="button">Albums</button>
         <button class="home-filter" data-filter="artists" type="button">Artistes</button>
       </div>
+
+      <!-- Filtre local par artiste (tags) : uniquement ce qui a déjà été
+           noté — la recherche catalogue reste l'écran Recherche. -->
+      <div class="home-tags" id="home-tags" hidden></div>
 
       <p id="home-status" class="search-status" hidden></p>
       <div class="home-grid" id="home-grid"></div>
@@ -341,6 +380,7 @@
       <div class="home-empty" id="home-empty" hidden>
         <p id="home-empty-text">Tu n'as encore rien noté.</p>
         <button class="home-empty-cta" id="home-empty-cta" type="button">Chercher un premier morceau</button>
+      </div>
       </div>
     </section>
 

@@ -7,6 +7,101 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Accueil ALL TIME — vues Votants/Moyenne, tri, tags artiste, place Follow — 2026-09-23
+
+Implémentation des décisions du TRS `TRS_ACCUEIL_DECOUVERTE_MUSICALE.md`
+(section « MISE À JOUR — itération du 23/09/2026 »). Mécanisme « +N
+autres » et vue Votants inchangés.
+
+**Structure de l'accueil** (de haut en bas) : barre de recherche factice →
+**onglets `ALL TIME | DERNIÈRES SORTIES`** (demande explicite après une
+première version en deux sections empilées ; ALL TIME à gauche et actif par
+défaut, puisque c'est le seul qui a du contenu ; basculer n'entraîne aucun
+rechargement). Écart assumé avec le TRS (BR « pas autant de niveaux
+d'onglets permanents ») : ce niveau d'onglets est le seul ajouté, la vue et
+le tri restant des sélecteurs compacts. DERNIÈRES SORTIES = carte « Bientôt
+disponible », aucun contenu ni mécanisme. ALL TIME : `Tout le monde / Mes notations / Mes contacts`,
+puis une ligne de deux sélecteurs segmentés `Votants | Moyenne` et
+`Récent | Mieux noté`, puis `Tout / Morceaux / Albums / Artistes`, puis les
+tags artistes, puis la mosaïque.
+
+### Serveur
+- **`GET /api/home?scope=all|mine&view=voters|avg`** : `view` absent ou
+  `voters` → `handleHome` inchangé. `view=avg` → nouveau `handleHomeAverage`,
+  même forme de réponse `{tracks, albums, artists}`, avec `voters` en plus
+  et sans `profile` sur les morceaux/albums.
+- **Requête Moyenne, morceaux** : mêmes lignes que Votants,
+  `GROUP BY mbid` → `AVG(global_rating)`, `COUNT(DISTINCT profile)`,
+  `MAX(COALESCE(rated_at, created_at))`.
+- **Requête Moyenne, albums** — *choix* : moyenne des notes-album **par
+  votant** (CTE `per_voter` = `AVG` des morceaux de chaque profil, groupé
+  par album+artiste+profil, exactement la tuile Album de la vue Votants),
+  puis `AVG` de ces notes + `COUNT(*)` votants. Chaque votant pèse autant,
+  quel que soit le nombre de morceaux qu'il a notés (une moyenne brute de
+  toutes les lignes aurait donné plus de poids à celui qui a noté 20
+  morceaux qu'à celui qui en a noté 2).
+- **Tri « notation la plus récente reçue » (modification comprise)** : il
+  n'existait qu'un `created_at` (date de création de la ligne). Ajout d'une
+  colonne **`rated_at`** (migration idempotente) mise à jour par un
+  **trigger SQLite** `ratings_rated_at` (`AFTER UPDATE OF global_rating`,
+  seulement si la valeur change) — aucun handler d'écriture ne peut
+  l'oublier. Lignes antérieures : `NULL` → `COALESCE(rated_at, created_at)`.
+  **La vue Votants reste triée sur `created_at`**, pour ne rien changer à
+  son comportement (demande explicite). Conséquence assumée : en Votants,
+  modifier une note ne la fait pas remonter ; en Moyenne, si.
+- **Artistes** (rôle TO BE DISCUSSED) : requête commune aux deux vues
+  (`homeArtists`), tuiles identiques à Votants même en vue Moyenne (pseudo
+  compris en « Tout le monde »).
+
+### Client
+- **Moyenne + « Mes notations »** — *choix* : les œuvres que **j'ai**
+  notées, mais avec la moyenne de **tous** les votants (`HAVING
+  SUM(profile = ?) > 0`). Une moyenne limitée à mes seules notes aurait
+  simplement redonné la vue Votants avec « 1 votant » partout.
+- **Badge** : en Moyenne, le coin haut-droite (badge pseudo) affiche « N
+  votant(s) » — même composant, pas de nouveau style. Pas d'étoile Classic
+  en Moyenne (statut individuel, pas agrégeable).
+- **Clic tuile Moyenne** : ouvre la fiche sous son propre profil
+  (pas de `viewProfile`, puisque la tuile ne correspond à aucun profil).
+- **Tri « Mieux noté »** : note décroissante, puis la plus récente à
+  égalité. Purement client (aucun rechargement). Appliqué à tous les
+  filtres de type, y compris Albums/Artistes seuls.
+- **« +N autres » en tri par note** — *choix* : le plafond garde les
+  morceaux **les mieux notés** de l'album (au lieu des plus récents), et la
+  tuile « +N » prend la note du premier morceau exclu pour se placer — même
+  règle que la date en tri chronologique. En Moyenne, le regroupement se
+  fait par (album, artiste), sans profil.
+- **Tags artistes** — *écart d'interprétation* : les tuiles n'affichent
+  aucun nom d'artiste (seulement pochette + note + pseudo ; le titre/
+  sous-titre et le badge « ALBUM » évoqués dans le TRS n'existent pas dans
+  le code). Plutôt que d'ajouter du texte sur chaque tuile (qui aurait
+  concurrencé le tap « ouvrir la fiche »), les artistes présents dans le
+  flux sont listés en **ligne de tags défilante** sous les filtres, du plus
+  récemment noté au plus ancien. Tap = filtre local (comparaison sans
+  casse sur `artist`) ; le filtre actif ne laisse que son tag, suivi de ✕,
+  et un tap le retire. Le filtre est conservé quand on change de vue, de
+  tri, de type ou de « qui ». Correspondance **exacte** sur le nom stocké :
+  un featuring (« X feat. Y ») reste un artiste distinct de « X ».
+- **« Mes contacts »** : troisième bouton de la ligne « qui », estompé
+  (`aria-disabled`), le tap affiche le toast « Bientôt disponible. ».
+  Aucune table ni logique.
+- **Réponses dans le désordre** : un compteur ignore les réponses
+  `/api/home` arrivées après une requête plus récente (bascules rapides).
+
+### Tests
+- curl sur la vraie base (lecture seule) : Votants identique à avant ;
+  Moyenne = 210 morceaux / 19 albums (aucune œuvre n'y est notée par deux
+  profils, tout est à « 1 votant »).
+- Copie de la base + 2ᵉ profil de test : Heaven (Don 9,5, test 6) →
+  7,8 / 2 votants, remonté en tête ; album God's Son (Don 8,4, test 6) →
+  7,2 / 2 votants ; « Mes notations » + Moyenne du profil de test = 1
+  morceau / 1 album avec la moyenne commune ; modifier une ancienne note de
+  Don pose bien `rated_at`. Copie supprimée ensuite.
+- **Non testé en navigateur réel** (rendu des sélecteurs, ligne de tags
+  sur mobile) — à valider à l'œil.
+
+---
+
 ## Limite externe : le catalogue de recherche Deezer varie selon la localisation du serveur — 2026-09-17
 
 **Contexte :** après le correctif de matching (section suivante), l'utilisateur

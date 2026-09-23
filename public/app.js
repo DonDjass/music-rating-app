@@ -1128,6 +1128,9 @@ const homeGrid = el("home-grid");
 const homeShowMoreBtn = el("home-show-more");
 const homeEmpty = el("home-empty");
 const homeEmptyCta = el("home-empty-cta");
+const homeViewSeg = el("home-view-seg");
+const homeSortSeg = el("home-sort-seg");
+const homeTags = el("home-tags");
 
 let homeData = { tracks: [], albums: [], artists: [] };
 let homeFilter = "all";
@@ -1135,6 +1138,18 @@ let homeFilter = "all";
 // ce qu'on demande au serveur (contrairement à homeFilter, qui ne fait que
 // re-filtrer les données déjà reçues) — un changement recharge donc /api/home.
 let homeScope = "all";
+// ALL TIME (TRS 23/09/2026) — vue "voters" (une tuile par notation, défaut)
+// ou "avg" (une tuile par œuvre, moyenne + nb de votants) : change la requête
+// serveur, donc recharge /api/home comme homeScope.
+let homeMode = "voters";
+// Tri exclusif : "date" (défaut) ou "note" (mieux noté → moins bien noté).
+// Purement client, s'applique aux deux vues.
+let homeSort = "date";
+// Filtre local par artiste (tag cliquable) : nom en minuscules, ou null.
+let homeArtistTag = null;
+// Ignore les réponses /api/home arrivées après une requête plus récente
+// (bascule rapide Votants/Moyenne ou Tout le monde/Mes notations).
+let homeLoadSeq = 0;
 
 // Chargement progressif : combien de tuiles de la liste filtrée courante sont
 // affichées. Remis à HOME_PAGE_SIZE à chaque changement de filtre (la liste
@@ -1154,7 +1169,17 @@ const HOME_TRACKS_PER_ALBUM = 3;
 // autres" si besoin (BR — demande explicite 2026-09-15).
 const HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE = 2;
 
-function capTracksPerAlbum(tracks, maxPerAlbum) {
+const byDateDesc = (a, b) => (b.createdAt || "").localeCompare(a.createdAt || "");
+// Tri "Mieux noté" : note décroissante, puis la plus récente à égalité.
+const byNoteDesc = (a, b) => (b.note ?? -1) - (a.note ?? -1) || byDateDesc(a, b);
+const homeComparator = () => (homeSort === "note" ? byNoteDesc : byDateDesc);
+
+// Regroupement par (album, artiste, profil) ; en vue Moyenne les tuiles
+// n'ont pas de profil → regroupement par (album, artiste). Les morceaux
+// gardés sont les premiers selon le tri actif (les plus récents, ou les
+// mieux notés), et la tuile "+N autres" prend la place (date ou note) du
+// premier morceau exclu.
+function capTracksPerAlbum(tracks, maxPerAlbum, compare = byDateDesc) {
   const groups = new Map();
   for (const t of tracks) {
     const key = `${(t.album || "").toLowerCase()}|${(t.artist || "").toLowerCase()}|${t.profile || ""}`;
@@ -1163,9 +1188,7 @@ function capTracksPerAlbum(tracks, maxPerAlbum) {
   }
   const result = [];
   for (const group of groups.values()) {
-    // Tri défensif : garantit l'ordre récent -> ancien même si l'ordre
-    // d'entrée changeait un jour côté serveur.
-    const sorted = [...group].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    const sorted = [...group].sort(compare);
     if (sorted.length <= maxPerAlbum) {
       result.push(...sorted);
       continue;
@@ -1180,9 +1203,11 @@ function capTracksPerAlbum(tracks, maxPerAlbum) {
       releaseMbid: kept[0].releaseMbid,
       profile: kept[0].profile,
       count: rest.length,
-      // Placée à la date du premier morceau exclu : apparaît dans le fil,
-      // triée par date, exactement là où ce morceau serait apparu.
+      // Placée à la date (ou la note, en tri "Mieux noté") du premier
+      // morceau exclu : apparaît dans le fil exactement là où ce morceau
+      // serait apparu. La note n'est jamais affichée sur cette tuile.
       createdAt: rest[0].createdAt,
+      note: rest[0].note,
     });
   }
   return result;
@@ -1207,13 +1232,95 @@ homeFilters.addEventListener("click", (e) => {
 
 homeScopeFilters.addEventListener("click", (e) => {
   const btn = e.target.closest(".home-scope-filter");
-  if (!btn || btn.dataset.scope === homeScope) return;
+  if (!btn) return;
+  // Follow Niveau 0 (TRS 23/09/2026) : emplacement réservé, pas de filtre.
+  if (btn.classList.contains("is-soon")) {
+    showToast("Bientôt disponible.");
+    return;
+  }
+  if (btn.dataset.scope === homeScope) return;
   homeScope = btn.dataset.scope;
   for (const b of homeScopeFilters.querySelectorAll(".home-scope-filter")) {
     b.classList.toggle("active", b === btn);
   }
   loadHome();
 });
+
+// Onglets ALL TIME / DERNIÈRES SORTIES : simple bascule d'affichage (les
+// données ALL TIME restent chargées, rien n'est rechargé au retour).
+const homeTabs = el("home-tabs");
+homeTabs.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-tab");
+  if (!btn) return;
+  for (const b of homeTabs.querySelectorAll(".home-tab")) {
+    b.classList.toggle("active", b === btn);
+    b.setAttribute("aria-selected", String(b === btn));
+  }
+  el("home-alltime").hidden = btn.dataset.tab !== "alltime";
+  el("home-releases").hidden = btn.dataset.tab !== "releases";
+});
+
+function setSegActive(seg, btn) {
+  for (const b of seg.querySelectorAll(".home-seg-btn")) b.classList.toggle("active", b === btn);
+}
+
+homeViewSeg.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-seg-btn");
+  if (!btn || btn.dataset.view === homeMode) return;
+  homeMode = btn.dataset.view;
+  setSegActive(homeViewSeg, btn);
+  loadHome();
+});
+
+homeSortSeg.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-seg-btn");
+  if (!btn || btn.dataset.sort === homeSort) return;
+  homeSort = btn.dataset.sort;
+  setSegActive(homeSortSeg, btn);
+  renderHome();
+});
+
+homeTags.addEventListener("click", (e) => {
+  const btn = e.target.closest(".home-tag");
+  if (!btn) return;
+  homeArtistTag = homeArtistTag ? null : btn.dataset.artist;
+  renderHome();
+  homeTags.scrollLeft = 0;
+});
+
+// Tags artistes : un par artiste présent dans les données reçues, du plus
+// récemment noté au plus ancien. Filtre actif → seul son tag reste, avec
+// une croix pour le retirer.
+function renderHomeTags() {
+  homeTags.innerHTML = "";
+  const all = [...homeData.tracks, ...homeData.albums, ...homeData.artists];
+  let names;
+  if (homeArtistTag) {
+    const match = all.find((i) => (i.artist || "").toLowerCase() === homeArtistTag);
+    names = [[homeArtistTag, match ? match.artist : homeArtistTag]];
+  } else {
+    const latest = new Map();
+    for (const i of all) {
+      if (!i.artist) continue;
+      const key = i.artist.toLowerCase();
+      const prev = latest.get(key);
+      if (!prev || (i.createdAt || "") > prev.at) latest.set(key, { name: i.artist, at: i.createdAt || "" });
+    }
+    names = [...latest.entries()]
+      .sort((a, b) => b[1].at.localeCompare(a[1].at))
+      .map(([key, v]) => [key, v.name]);
+  }
+  for (const [key, name] of names) {
+    const tag = document.createElement("button");
+    tag.type = "button";
+    tag.className = "home-tag" + (homeArtistTag ? " active" : "");
+    tag.dataset.artist = key;
+    tag.textContent = homeArtistTag ? `${name} ✕` : name;
+    if (homeArtistTag) tag.setAttribute("aria-label", `Retirer le filtre ${name}`);
+    homeTags.appendChild(tag);
+  }
+  homeTags.hidden = names.length === 0;
+}
 
 // Pochettes des tuiles : chargées seulement à l'approche de l'écran.
 const tileCoverObserver = new IntersectionObserver(
@@ -1310,9 +1417,15 @@ function createHomeTile(item) {
   note.textContent = formatNum(item.note);
   tile.appendChild(note);
 
-  // Pseudo de l'auteur : uniquement utile en mode "Tout le monde" (en mode
-  // "Mes notations", tout appartient à l'utilisateur courant — inutile).
-  if (homeScope === "all" && item.profile) {
+  // Vue Moyenne : nombre de votants à la place du pseudo (même badge).
+  if (item.voters) {
+    const voters = document.createElement("span");
+    voters.className = "home-tile-profile";
+    voters.textContent = `${item.voters} votant${item.voters > 1 ? "s" : ""}`;
+    tile.appendChild(voters);
+  } else if (homeScope === "all" && item.profile) {
+    // Pseudo de l'auteur : uniquement utile en mode "Tout le monde" (en mode
+    // "Mes notations", tout appartient à l'utilisateur courant — inutile).
     const author = document.createElement("span");
     author.className = "home-tile-profile";
     author.textContent = item.profile;
@@ -1356,21 +1469,23 @@ async function openHomeTile(item) {
 }
 
 function homeVisibleItems() {
+  const compare = homeComparator();
+  const byTag = (list) =>
+    homeArtistTag ? list.filter((i) => (i.artist || "").toLowerCase() === homeArtistTag) : list;
+  const tracks = byTag(homeData.tracks);
   if (homeFilter === "all") {
     // Le plafond par album s'applique aussi ici, mais plus bas qu'en vue
     // "Morceaux" : la tuile Album (même pochette) est déjà présente.
     return [
-      ...capTracksPerAlbum(homeData.tracks, HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE),
-      ...homeData.albums,
-      ...homeData.artists,
-    ].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      ...capTracksPerAlbum(tracks, HOME_TRACKS_PER_ALBUM_WITH_ALBUM_TILE, compare),
+      ...byTag(homeData.albums),
+      ...byTag(homeData.artists),
+    ].sort(compare);
   }
   if (homeFilter === "tracks") {
-    return capTracksPerAlbum(homeData.tracks, HOME_TRACKS_PER_ALBUM).sort((a, b) =>
-      (b.createdAt || "").localeCompare(a.createdAt || "")
-    );
+    return capTracksPerAlbum(tracks, HOME_TRACKS_PER_ALBUM, compare).sort(compare);
   }
-  return homeData[homeFilter] || [];
+  return [...byTag(homeData[homeFilter] || [])].sort(compare);
 }
 
 function appendHomeTiles(items, from, to) {
@@ -1388,6 +1503,7 @@ function renderHome() {
   // "Tout le monde" (l'inverse n'est jamais vrai, "mine" est un sous-ensemble
   // de "all").
   homeFilters.hidden = empty;
+  homeViewSeg.parentElement.hidden = empty;
   homeGrid.hidden = empty;
   homeEmpty.hidden = !empty;
   if (empty) {
@@ -1398,15 +1514,19 @@ function renderHome() {
   homeGrid.innerHTML = "";
   homeShownCount = HOME_PAGE_SIZE; // nouveau filtre = on repart de la 1ère page
   if (empty) {
+    homeTags.hidden = true;
     homeShowMoreBtn.hidden = true;
     return;
   }
 
+  renderHomeTags();
   const items = homeVisibleItems();
   if (items.length === 0) {
     const msg = document.createElement("div");
     msg.className = "home-grid-msg";
-    msg.textContent = "Rien dans cette catégorie pour l'instant.";
+    msg.textContent = homeArtistTag
+      ? "Rien pour cet artiste dans cette catégorie."
+      : "Rien dans cette catégorie pour l'instant.";
     homeGrid.appendChild(msg);
     homeShowMoreBtn.hidden = true;
     return;
@@ -1426,11 +1546,15 @@ homeShowMoreBtn.addEventListener("click", () => {
 async function loadHome() {
   homeStatus.hidden = false;
   homeStatus.textContent = "Chargement…";
+  const seq = ++homeLoadSeq;
+  let data;
   try {
-    homeData = await api(`/api/home?scope=${homeScope}`, "GET");
+    data = await api(`/api/home?scope=${homeScope}&view=${homeMode}`, "GET");
   } catch (err) {
-    homeData = { tracks: [], albums: [], artists: [] };
+    data = { tracks: [], albums: [], artists: [] };
   }
+  if (seq !== homeLoadSeq) return;
+  homeData = data;
   homeStatus.hidden = true;
   renderHome();
 }
