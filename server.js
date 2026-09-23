@@ -1403,6 +1403,45 @@ async function handleResolveAlbum(title, artist, res) {
   }
 }
 
+// Édition (release) à privilégier pour afficher cet album à ce profil, ou
+// null pour garder celle demandée. Garde la demandée si le profil y a déjà
+// une notation album ou des morceaux ; sinon prend sa notation album du même
+// nom/artiste, à défaut l'édition portant le plus de ses morceaux notés.
+function preferredRelease(data, requested, profile) {
+  const onRequested = db
+    .prepare(
+      `SELECT 1 FROM ratings
+        WHERE profile = ? AND (
+          (entity_type = 'album' AND mbid = ?) OR
+          (entity_type = 'track' AND release_mbid = ?))
+        LIMIT 1`
+    )
+    .get(profile, requested, requested);
+  if (onRequested) return null;
+
+  const albumRow = db
+    .prepare(
+      `SELECT mbid FROM ratings
+        WHERE profile = ? AND entity_type = 'album' AND mbid IS NOT NULL
+          AND album = ? COLLATE NOCASE AND artist = ? COLLATE NOCASE
+        LIMIT 1`
+    )
+    .get(profile, data.title || "", data.artist || "");
+  if (albumRow) return albumRow.mbid;
+
+  const mbids = data.tracks.map((t) => t.mbid).filter(Boolean);
+  if (!mbids.length) return null;
+  const row = db
+    .prepare(
+      `SELECT release_mbid, COUNT(*) AS n FROM ratings
+        WHERE profile = ? AND entity_type = 'track' AND release_mbid IS NOT NULL
+          AND mbid IN (${mbids.map(() => "?").join(",")})
+        GROUP BY release_mbid ORDER BY n DESC LIMIT 1`
+    )
+    .get(profile, ...mbids);
+  return row ? row.release_mbid : null;
+}
+
 // `mbid` = release, OU `rgMbid` = release-group (résolu en une release ; utile
 // pour la discographie d'un artiste qui liste des release-groups).
 // `viewProfile` (GD-consultation) : affiche les notes de CE profil (tuile
@@ -1414,8 +1453,36 @@ async function handleAlbumTracks(mbid, rgMbid, profile, viewProfile, res) {
     if (!releaseMbid && rgMbid) releaseMbid = await releaseFromGroup(rgMbid);
     if (!releaseMbid) return sendJson(res, 400, { error: "mbid manquant." });
 
-    const data = await getReleaseTracks(releaseMbid);
+    let data = await getReleaseTracks(releaseMbid);
     const displayProfile = viewProfile || profile;
+
+    // Même album, autre édition : ouvert par son nom (tuile d'accueil,
+    // recherche, discographie), MusicBrainz peut renvoyer une autre release
+    // que celle à laquelle le profil a rattaché ses notes. La tracklist
+    // retrouvait bien les notes (mêmes recordings) mais la notation album
+    // (feeling hérité, critères, MORCEAUX), keyée sur la release, était vide.
+    // → on bascule sur l'édition déjà utilisée par ce profil.
+    const preferred = preferredRelease(data, releaseMbid, displayProfile);
+    if (preferred) {
+      try {
+        data = await getReleaseTracks(preferred);
+        releaseMbid = preferred;
+      } catch {
+        /* garde l'édition demandée */
+      }
+    }
+
+    // Morceaux notés depuis la recherche (sans contexte album) : release
+    // inconnue → absents des stats album. On les rattache à cette édition.
+    if (!viewProfile) {
+      const attach = db.prepare(
+        `UPDATE ratings SET release_mbid = ?
+          WHERE mbid = ? AND profile = ? AND entity_type = 'track' AND release_mbid IS NULL`
+      );
+      let attached = 0;
+      for (const t of data.tracks) attached += attach.run(releaseMbid, t.mbid, profile).changes;
+      if (attached) recomputeAlbumForRelease(releaseMbid, profile);
+    }
 
     // Enrichit chaque morceau avec la NOTE GLOBALE du profil affiché (null si
     // non noté), et indique si CE profil "aime" l'album.

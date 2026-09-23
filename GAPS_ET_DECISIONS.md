@@ -7,6 +7,38 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## Fix : notation album vide quand l'album est ouvert sur une autre édition — 2026-09-24
+
+Signalé en beta : « Blanco nemesis » (Booba), profil Don — « Calculer
+depuis mes morceaux » disait « Aucun morceau de l'album n'a de note au
+feeling » alors que 10 morceaux en ont une.
+
+- **Cause** : les stats album (feeling hérité, critères, MORCEAUX) sont
+  keyées sur la **release** MusicBrainz (`release_mbid` des morceaux). Les
+  morceaux de Don sont sur l'édition `298580eb…`, mais ouvrir l'album par
+  son nom (tuile d'accueil → `/api/resolve-album`, 1er résultat MB) donne
+  l'édition `6a1e8515…`. La tracklist affichait quand même les notes
+  (jointure par recording, commun aux éditions) → incohérence visible.
+- **Fix (serveur, `/api/album-tracks`)** : `preferredRelease` — si le profil
+  affiché n'a rien sur l'édition demandée, on bascule sur son édition :
+  d'abord sa notation album du même nom/artiste, sinon l'édition portant le
+  plus de ses morceaux notés présents dans la tracklist. Le client utilisait
+  déjà `data.releaseMbid` pour la notation/pochette → rien à changer côté
+  client. Coût : un appel MusicBrainz de plus, seulement en cas de bascule.
+  Choix : par **profil** (en consultation « Tout le monde », c'est l'édition
+  du profil consulté) ; un profil sans aucune note garde l'édition demandée.
+- **Complément** : un morceau noté depuis la recherche (sans contexte album,
+  `release_mbid` NULL — ex. « Nemesis » sur ce même album) est rattaché à
+  l'édition ouverte à la première ouverture de sa tracklist par son propre
+  profil (jamais en consultation), puis la notation album est recalculée.
+- **Reste non couvert** : un profil dont les morceaux d'un même album sont
+  répartis sur deux éditions — seule l'édition majoritaire compte.
+- Testé sur copie locale (God's Son : édition `110e0ffe…` demandée →
+  `cf2327cd…` renvoyée, 14 morceaux, feeling moyen 8,4 ; profil vide → pas
+  de bascule).
+
+---
+
 ## Accueil ALL TIME — vues Votants/Moyenne, tri, tags artiste, place Follow — 2026-09-23
 
 Implémentation des décisions du TRS `TRS_ACCUEIL_DECOUVERTE_MUSICALE.md`
