@@ -7,6 +7,19 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
+## En-tête « MA NOTATION » → « NOTATION DE X » en consultation — demande explicite 2026-09-24
+
+En consultation d'un autre profil (tuile « Tout le monde »), l'en-tête de la
+fiche morceau et de la ligne sticky album disait « MA NOTATION » alors que
+les notes affichées sont celles de l'ami. Libellé désormais « NOTATION DE
+<PSEUDO> » (majuscules comme l'original, pseudo en doré comme dans le
+bandeau « Notation de X »), rétabli à « MA NOTATION » après « Noter ». Sur
+la ligne album (4 notes sur une ligne), un pseudo long est tronqué avec
+« … » (texte complet en `title`). Fiche artiste non concernée (jamais en
+consultation).
+
+---
+
 ## Fix : notation album vide quand l'album est ouvert sur une autre édition — 2026-09-24
 
 Signalé en beta : « Blanco nemesis » (Booba), profil Don — « Calculer

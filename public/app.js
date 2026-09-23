@@ -659,10 +659,19 @@ function renderTrackNav() {
 // Consultation (GD-consultation) : bannière "Notation de X" + verrouillage
 // de toute action d'écriture tant qu'on n'a pas tapé "Noter" (PP-01 — jamais
 // écrire sous son propre profil en affichant celui d'un autre).
+// En-tête "MA NOTATION" → "NOTATION DE X" quand on consulte la notation
+// d'un autre profil (morceau ou album) ; redevient "MA NOTATION" après "Noter".
+function setNotationLabel(label, viewProfile) {
+  label.textContent = viewProfile ? `NOTATION DE ${viewProfile.toUpperCase()}` : "MA NOTATION";
+  label.title = viewProfile ? `Notation de ${viewProfile}` : "";
+  label.classList.toggle("is-other", !!viewProfile);
+}
+
 function renderTrackViewingBanner() {
   const viewing = !!trackViewProfile;
   trackViewingBanner.hidden = !viewing;
   if (viewing) trackViewingProfileName.textContent = trackViewProfile;
+  setNotationLabel(el("track-notation-label"), trackViewProfile);
 
   feelingToggle.disabled = viewing;
   criteriaToggle.disabled = viewing;
@@ -1907,6 +1916,7 @@ function renderAlbumViewingBanner() {
   const viewing = !!albumViewProfile;
   albumViewingBanner.hidden = !viewing;
   if (viewing) albumViewingProfileName.textContent = albumViewProfile;
+  setNotationLabel(el("album-notation-label"), albumViewProfile);
 
   albumLikeBtn.disabled = viewing;
   albumShareBtn.hidden = viewing; // "Partager ma note" n'a pas de sens ici
