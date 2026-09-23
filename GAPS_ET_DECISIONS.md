@@ -7,16 +7,16 @@ posteriori — pas de blocage en cours de route sauf mention contraire.
 
 ---
 
-## En-tête « MA NOTATION » → « NOTATION DE X » en consultation — demande explicite 2026-09-24
+## En-tête « MA NOTATION » → « SA NOTATION » en consultation — demande explicite 2026-09-24
 
 En consultation d'un autre profil (tuile « Tout le monde »), l'en-tête de la
 fiche morceau et de la ligne sticky album disait « MA NOTATION » alors que
-les notes affichées sont celles de l'ami. Libellé désormais « NOTATION DE
-<PSEUDO> » (majuscules comme l'original, pseudo en doré comme dans le
-bandeau « Notation de X »), rétabli à « MA NOTATION » après « Noter ». Sur
-la ligne album (4 notes sur une ligne), un pseudo long est tronqué avec
-« … » (texte complet en `title`). Fiche artiste non concernée (jamais en
+les notes affichées sont celles de l'ami. Libellé désormais « SA NOTATION »,
+rétabli à « MA NOTATION » après « Noter » ; le pseudo reste affiché dans le
+bandeau « Notation de X » au-dessus. Fiche artiste non concernée (jamais en
 consultation).
+**Première version écartée** : « NOTATION DE <PSEUDO> » — sur la ligne
+album (4 notes sur une ligne), les pseudos étaient quasi tous tronqués.
 
 ---
 

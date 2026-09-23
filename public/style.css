@@ -389,22 +389,6 @@ body {
   margin-right: 2px;
 }
 
-/* "NOTATION DE <PSEUDO>" (consultation) : plus long que "MA NOTATION" —
-   se réduit avec "…" plutôt que de pousser les 4 notes hors de la ligne ;
-   en doré, comme le pseudo du bandeau "Notation de X". */
-.album-notation-label.is-other {
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.album-notation-label.is-other,
-#track-notation-label.is-other {
-  color: var(--gold);
-}
-
 .album-note {
   flex-shrink: 0;
   background: none;

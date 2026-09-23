@@ -659,12 +659,11 @@ function renderTrackNav() {
 // Consultation (GD-consultation) : bannière "Notation de X" + verrouillage
 // de toute action d'écriture tant qu'on n'a pas tapé "Noter" (PP-01 — jamais
 // écrire sous son propre profil en affichant celui d'un autre).
-// En-tête "MA NOTATION" → "NOTATION DE X" quand on consulte la notation
-// d'un autre profil (morceau ou album) ; redevient "MA NOTATION" après "Noter".
+// En-tête "MA NOTATION" → "SA NOTATION" quand on consulte la notation d'un
+// autre profil (morceau ou album) — le pseudo est déjà dans le bandeau
+// "Notation de X" juste au-dessus ; redevient "MA NOTATION" après "Noter".
 function setNotationLabel(label, viewProfile) {
-  label.textContent = viewProfile ? `NOTATION DE ${viewProfile.toUpperCase()}` : "MA NOTATION";
-  label.title = viewProfile ? `Notation de ${viewProfile}` : "";
-  label.classList.toggle("is-other", !!viewProfile);
+  label.textContent = viewProfile ? "SA NOTATION" : "MA NOTATION";
 }
 
 function renderTrackViewingBanner() {
